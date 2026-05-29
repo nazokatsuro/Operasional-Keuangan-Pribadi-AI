@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Plus, Edit2, Trash2, TrendingUp, TrendingDown, RefreshCw, Smartphone, 
-  Sparkles, DollarSign, Award, ArrowUpRight, Check, X, Info, Sliders
+  Sparkles, DollarSign, Award, ArrowUpRight, Check, X, Info, Sliders, Coins, Cpu
 } from 'lucide-react';
 import { Asset, formatCurrency } from '../utils/financeHelper';
 
@@ -54,34 +54,56 @@ export function AsetView({
     setLocalAssets(assets);
   }, [assets]);
 
-  // Synchronize batchPrices state whenever localAssets changes
+  // Synchronize batchPrices state by Category (Sub-Kategori) whenever localAssets changes
   useEffect(() => {
     const prices: Record<string, string> = {};
     localAssets.forEach(asset => {
-      prices[asset.id] = asset.marketPrice.toString();
+      // Choose the representative price for the category
+      if (!prices[asset.category]) {
+        prices[asset.category] = asset.marketPrice.toString();
+      }
+    });
+    // Ensure all standard categories have a fallback
+    const standardCategories = ['Crypto', 'Gold', 'Saham', 'MutualFund', 'Forex', 'Properti'];
+    standardCategories.forEach(cat => {
+      if (!prices[cat]) {
+        prices[cat] = '0';
+      }
     });
     setBatchPrices(prices);
   }, [localAssets]);
 
-  const handleBatchPriceChange = (id: string, value: string) => {
+  const handleBatchPriceChange = (category: string, value: string) => {
     setBatchPrices(prev => ({
       ...prev,
-      [id]: value
+      [category]: value
     }));
   };
 
   const handleSaveAllBatchPrices = () => {
     localAssets.forEach(asset => {
-      const priceStr = batchPrices[asset.id];
+      const priceStr = batchPrices[asset.category];
       if (priceStr !== undefined) {
         const priceNum = parseFloat(priceStr);
-        if (!isNaN(priceNum) && priceNum !== asset.marketPrice) {
+        if (!isNaN(priceNum) && priceNum >= 0 && priceNum !== asset.marketPrice) {
           onEditAsset(asset.id, { marketPrice: priceNum });
         }
       }
     });
     setLastUpdated(new Date().toLocaleTimeString());
     setShowBatchEditor(false);
+  };
+
+  const getCategoryLabel = (category: string) => {
+    switch (category) {
+      case 'Crypto': return 'Crypto';
+      case 'Gold': return 'Emas (Gold)';
+      case 'Saham': return 'Pasar Saham';
+      case 'MutualFund': return 'Reksa Dana';
+      case 'Forex': return 'Valas (Forex)';
+      case 'Properti': return 'Properti';
+      default: return category;
+    }
   };
 
   const handleStartCardEdit = (id: string, currentMarketPrice: number) => {
@@ -97,33 +119,62 @@ export function AsetView({
     setActiveCardEditId(null);
   };
 
-  // Fetch prices from public geodetic CoinGecko APIs
+  // Fetch prices from our Gemini-powered backend API with Search Grounding
   const handleFetchPrices = async () => {
     setIsRefreshing(true);
     try {
-      const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=idr');
+      // Consolidate payload: group all 'Gold' category assets under 'GOLD' (Emas Logam Mulia)
+      // to avoid redundant / fragmented queries. Emas is 1 single category for mass pricing.
+      const consolidatedMap = new Map<string, { code: string; name: string; marketPrice: number }>();
+      
+      localAssets.forEach(asset => {
+        if (asset.category === 'Gold' || asset.code.toUpperCase() === 'GOLD') {
+          consolidatedMap.set('GOLD', {
+            code: 'GOLD',
+            name: 'Emas (Logam Mulia) per Gram',
+            marketPrice: asset.marketPrice
+          });
+        } else {
+          consolidatedMap.set(asset.code.toUpperCase(), {
+            code: asset.code,
+            name: asset.name,
+            marketPrice: asset.marketPrice
+          });
+        }
+      });
+
+      const assetsPayload = Array.from(consolidatedMap.values());
+
+      const response = await fetch('/api/prices', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ assets: assetsPayload })
+      });
+
       if (response.ok) {
-        const data = await response.json();
-        
-        // Map fetched values
-        const updated = localAssets.map(asset => {
-          let price = asset.marketPrice;
-          if (asset.code.toLowerCase() === 'btc' && data.bitcoin) {
-            price = data.bitcoin.idr;
-          } else if (asset.code.toLowerCase() === 'eth' && data.ethereum) {
-            price = data.ethereum.idr;
-          } else if (asset.code.toLowerCase() === 'sol' && data.solana) {
-            price = data.solana.idr;
-          }
-          return { ...asset, marketPrice: price };
-        });
-        
-        // Sync
-        setLocalAssets(updated);
-        setLastUpdated(new Date().toLocaleTimeString());
+        const resData = await response.json();
+        if (resData.success && resData.prices) {
+          const updated = localAssets.map(asset => {
+            const isGold = asset.category === 'Gold' || asset.code.toUpperCase() === 'GOLD';
+            const lookupCode = isGold ? 'GOLD' : asset.code.toUpperCase();
+            const newPrice = resData.prices[lookupCode];
+            
+            if (newPrice !== undefined && newPrice > 0) {
+              // Persist price change globally!
+              onEditAsset(asset.id, { marketPrice: newPrice });
+              return { ...asset, marketPrice: newPrice };
+            }
+            return asset;
+          });
+          
+          setLocalAssets(updated);
+          setLastUpdated(resData.lastUpdated || new Date().toLocaleTimeString());
+        }
       }
     } catch (e) {
-      console.warn('Network issue fetching CoinGecko prices, using cached values.', e);
+      console.warn('Issue fetching prices from Gemini backend:', e);
     } finally {
       setIsRefreshing(false);
     }
@@ -188,6 +239,18 @@ export function AsetView({
   const profitLoss = totalPasar - totalBeli;
   const roiPct = totalBeli > 0 ? (profitLoss / totalBeli) * 100 : 0;
 
+  // Physical units and coins summaries
+  const totalGoldGrams = localAssets
+    .filter(a => a.category === 'Gold' || a.name.toLowerCase().includes('emas'))
+    .reduce((sum, a) => sum + a.units, 0);
+
+  const totalGoldPasar = localAssets
+    .filter(a => a.category === 'Gold' || a.name.toLowerCase().includes('emas'))
+    .reduce((sum, a) => sum + (a.units * a.marketPrice), 0);
+
+  const cryptoAssets = localAssets.filter(a => a.category === 'Crypto');
+  const totalCryptoPasar = cryptoAssets.reduce((sum, a) => sum + (a.units * a.marketPrice), 0);
+
   return (
     <div className="space-y-6">
       {/* HEADER SECTION */}
@@ -218,7 +281,7 @@ export function AsetView({
             className="p-2.5 rounded-xl bg-white/[0.04] text-white hover:bg-white/[0.08] active:scale-95 transition-all text-xs flex items-center gap-1.5 cursor-pointer font-bold border border-white/5"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh Portofolio ({lastUpdated})</span>
+            <span className="hidden sm:inline">Refresh Harga Jual Terkini ({lastUpdated})</span>
           </button>
           
           <button 
@@ -283,39 +346,47 @@ export function AsetView({
             ))}
           </div>
 
-          {/* Grid list of editable market prices */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pt-1 max-h-[300px] overflow-y-auto pr-1">
-            {localAssets
-              .filter(asset => activeBatchCategory === 'All' || asset.category === activeBatchCategory)
-              .map((asset) => (
-                <div key={asset.id} className="p-3 bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.1] rounded-2xl flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="h-8 w-8 rounded-xl bg-white/[0.04] flex items-center justify-center text-xs shrink-0">{asset.logo}</span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-white truncate">{asset.name}</p>
-                      <p className="text-[10px] font-mono text-[#9aa4bf] truncate">{asset.code}</p>
+          {/* Grid list of editable market prices by Sub-Kategori */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pt-1 max-h-[300px] overflow-y-auto pr-1 font-sans">
+            {[
+              { key: 'Gold', label: 'Emas', logo: 'Au' },
+              { key: 'Crypto', label: 'Crypto', logo: '₿' },
+              { key: 'Saham', label: 'Pasar Saham', logo: '📈' },
+              { key: 'MutualFund', label: 'Reksa Dana', logo: '📊' },
+              { key: 'Forex', label: 'Valas (Forex)', logo: '💵' },
+              { key: 'Properti', label: 'Properti', logo: '🏠' }
+            ]
+              .filter(cat => activeBatchCategory === 'All' || cat.key === activeBatchCategory)
+              .map((cat) => {
+                const matchingAssets = localAssets.filter(a => a.category === cat.key);
+                const hasAssets = matchingAssets.length > 0;
+                // Get representative or latest price
+                const referencePrice = hasAssets ? matchingAssets[0].marketPrice : 0;
+                
+                return (
+                  <div key={cat.key} className="p-3 bg-white/[0.02] border border-white/[0.06] hover:border-[#7c5cff]/30 rounded-2xl flex items-center justify-between gap-3 transition-colors duration-200">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="h-8 w-8 rounded-xl bg-[#7c5cff]/10 text-[#cabafe] flex items-center justify-center text-xs font-black shrink-0">{cat.logo}</span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-white truncate">{cat.label}</p>
+                        <p className="text-[10px] font-mono text-[#9aa4bf] truncate">Sub-Kategori</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-mono text-[#9aa4bf]">Rp</span>
+                        <input
+                          type="number"
+                          value={batchPrices[cat.key] !== undefined ? batchPrices[cat.key] : referencePrice}
+                          onChange={(e) => handleBatchPriceChange(cat.key, e.target.value)}
+                          className="w-24 pl-6 pr-2 py-1 bg-[#0c1020] text-xs text-white rounded-lg border border-white/10 font-mono text-right focus:outline-none focus:border-[#7c5cff]"
+                          placeholder="Harga"
+                        />
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className="text-[9px] text-[#9aa4bf] font-mono leading-none">Beli: {formatCurrency(asset.buyPrice)}</span>
-                    <div className="relative mt-1">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono text-[#9aa4bf]">Rp</span>
-                      <input
-                        type="number"
-                        value={batchPrices[asset.id] !== undefined ? batchPrices[asset.id] : asset.marketPrice}
-                        onChange={(e) => handleBatchPriceChange(asset.id, e.target.value)}
-                        className="w-24 pl-7 pr-2 py-1 bg-[#0c1020] text-xs text-white rounded-lg border border-white/10 font-mono text-right focus:outline-none focus:border-[#7c5cff]"
-                        placeholder="Harga"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            {localAssets.filter(asset => activeBatchCategory === 'All' || asset.category === activeBatchCategory).length === 0 && (
-              <div className="col-span-full py-8 text-center text-xs text-[#9aa4bf]">
-                Tidak ada aset di kategori ini. Tambahkan aset baru terlebih dahulu.
-              </div>
-            )}
+                );
+              })}
           </div>
         </div>
       )}
@@ -341,6 +412,52 @@ export function AsetView({
         </div>
       </div>
 
+      {/* SUMMARY OF PHYSICAL UNITS & COINS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#0c1020]/50 p-5 rounded-[22px] border border-white/[0.05]">
+        {/* Gold physical grams */}
+        <div className="flex items-start gap-4">
+          <div className="p-3.5 rounded-2xl bg-amber-500/10 text-amber-500 border border-amber-500/15 flex items-center justify-center shrink-0">
+            <Coins className="h-5 w-5" />
+          </div>
+          <div className="text-left">
+            <span className="text-[10px] text-[#9aa4bf] font-mono tracking-wider font-extrabold uppercase">AKUMULASI LOGAM MULIA (EMAS)</span>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-2xl font-black text-white">{totalGoldGrams.toLocaleString('id-ID')}</span>
+              <span className="text-sm font-bold text-[#ffb547]">gram</span>
+            </div>
+            <p className="text-[10.5px] text-[#9aa4bf] mt-1.5 leading-normal">
+              Representasi fisik total kepemilikan emas batangan, tabungan koin dinar, & perhiasan dengan perkiraan nilai pasar sebesar <span className="font-bold text-white">{formatCurrency(totalGoldPasar)}</span>.
+            </p>
+          </div>
+        </div>
+
+        {/* Crypto coin units */}
+        <div className="relative overflow-hidden flex items-start gap-4 border-t md:border-t-0 md:border-l border-white/[0.06] pt-5 md:pt-0 md:pl-6">
+          <div className="p-3.5 rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/15 flex items-center justify-center shrink-0">
+            <Cpu className="h-5 w-5" />
+          </div>
+          <div className="text-left w-full">
+            <span className="text-[10px] text-[#9aa4bf] font-mono tracking-wider font-extrabold uppercase">RANGKUMAN PORTOFOLIO CRYPTO / TOKEN</span>
+            
+            <div className="flex flex-wrap gap-2 mt-2 max-h-[70px] overflow-y-auto pr-1">
+              {cryptoAssets.length === 0 ? (
+                <span className="text-xs text-[#9aa4bf] italic font-medium leading-normal">Belum ada aset kripto yang terdaftar</span>
+              ) : (
+                cryptoAssets.map(asset => (
+                  <span key={asset.id} className="inline-flex items-center gap-1 px-2.5 py-1 bg-white/[0.02] border border-white/[0.04] rounded-xl text-xs text-[#9aa4bf] font-mono">
+                    <span className="text-white font-bold">{asset.logo || '💎'} {asset.units.toLocaleString('id-ID', { maximumFractionDigits: 6 })}</span>
+                    <span className="text-[10px] font-bold text-blue-400">{asset.code}</span>
+                  </span>
+                ))
+              )}
+            </div>
+            <p className="text-[10.5px] text-[#9aa4bf] mt-2 leading-normal">
+              Nilai pasar estimasi saat ini: <span className="font-bold text-white">{formatCurrency(totalCryptoPasar)}</span>.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* ASSETS PORTFOLIO GRID GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {localAssets.map((asset) => {
@@ -360,8 +477,8 @@ export function AsetView({
                     {asset.logo}
                   </span>
                   <div>
-                    <h3 className="text-xs font-bold text-white tracking-tight">{asset.name}</h3>
-                    <p className="text-[9px] font-mono text-[#9aa4bf] uppercase">{asset.code} • {asset.category}</p>
+                    <h3 className="text-xs font-bold text-white tracking-tight">{getCategoryLabel(asset.category)}</h3>
+                    <p className="text-[9px] font-mono text-[#9aa4bf] uppercase">{asset.code} • {asset.name}</p>
                   </div>
                 </div>
                 

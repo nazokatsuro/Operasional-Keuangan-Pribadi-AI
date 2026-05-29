@@ -28,7 +28,7 @@ import {
   DEFAULT_TRANSACTIONS, DEFAULT_ACCOUNTS, DEFAULT_ASSETS, DEFAULT_DEBTS,
   formatCurrency, getFriendlyGreeting 
 } from './utils/financeHelper';
-import { ParsedTransaction } from './utils/aiParser';
+import { ParsedTransaction, parseFinanceText } from './utils/aiParser';
 
 import { 
   signInWithGoogleDrive, 
@@ -240,9 +240,13 @@ interface UserProfile {
       showToast(`Berhasil Masuk: ${result.user.email}`, 'success');
       // Trigger automatic cloud sync checking flow
       await handleCheckAndAutoLoadDraft(result.accessToken);
-    } catch (err) {
-      console.error(err);
-      showToast('Gagal terhubung dengan Penyimpanan Awan & Google Drive.', 'error');
+    } catch (err: any) {
+      if (err.code === 'auth/popup-closed-by-user') {
+        showToast('Proses masuk Google dibatalkan.', 'info');
+      } else {
+        console.error(err);
+        showToast('Gagal terhubung dengan Penyimpanan Awan & Google Drive.', 'error');
+      }
     } finally {
       setIsLoggingIn(false);
     }
@@ -331,15 +335,14 @@ interface UserProfile {
     setAccounts(prevAccounts => {
       let changed = false;
       const updated = prevAccounts.map(acc => {
-        const defaultAcc = DEFAULT_ACCOUNTS.find(d => d.name.toLowerCase() === acc.name.toLowerCase());
-        const baseBal = acc.initialBalance !== undefined 
-          ? acc.initialBalance 
-          : (defaultAcc ? (defaultAcc.initialBalance ?? 0) : 0);
-        
         const txsForAcc = transactions.filter(t => t.source.toLowerCase() === acc.name.toLowerCase());
         const balanceDiff = txsForAcc.reduce((sum, t) => {
           return sum + (t.type === 'Pemasukan' ? t.nominal : -t.nominal);
         }, 0);
+
+        const baseBal = acc.initialBalance !== undefined 
+          ? acc.initialBalance 
+          : (acc.balance - balanceDiff);
         
         const correctBalance = baseBal + balanceDiff;
         if (acc.balance !== correctBalance || acc.initialBalance !== baseBal) {
@@ -402,7 +405,8 @@ interface UserProfile {
         color: selectedGradient,
         textColor: '#ffffff',
         iconName: 'Wallet',
-        accountNumber: 'Saku Virtual Baru'
+        accountNumber: 'Saku Virtual Baru',
+        initialBalance: 0
       };
 
       setAccounts(prev => [...prev, newAccountObj]);
@@ -433,7 +437,8 @@ interface UserProfile {
           color: selectedGradient,
           textColor: '#ffffff',
           iconName: 'Wallet',
-          accountNumber: 'Saku Virtual Baru'
+          accountNumber: 'Saku Virtual Baru',
+          initialBalance: 0
         };
         finalAccounts = [...prevAccounts, newAccountObj];
       }
@@ -549,8 +554,51 @@ interface UserProfile {
     });
   };
 
+  // Helper to detect if a transaction title indicates an asset purchase
+  const detectAssetCategoryAndCode = (title: string) => {
+    const normTitle = title.toLowerCase();
+    
+    // Gold
+    if (normTitle.includes('emas') || normTitle.includes('gold') || normTitle.includes('perak') || normTitle.includes('logam mulia') || normTitle.includes('antam')) {
+      return { category: 'Gold' as const, code: 'GOLD', isAsset: true };
+    }
+    
+    // Crypto
+    if (normTitle.includes('btc') || normTitle.includes('bitcoin') || normTitle.includes('crypto') || normTitle.includes('kripto') || normTitle.includes('eth') || normTitle.includes('ethereum') || normTitle.includes('usdt')) {
+      return { category: 'Crypto' as const, code: 'BTC', isAsset: true };
+    }
+    
+    // Saham
+    if (normTitle.includes('saham') || normTitle.includes('stock') || normTitle.includes('bbca') || normTitle.includes('bbri') || normTitle.includes('bmri') || normTitle.includes('tlkm') || normTitle.includes('gotof')) {
+      let code = 'STOCK';
+      if (normTitle.includes('bbca')) code = 'BBCA';
+      else if (normTitle.includes('bbri')) code = 'BBRI';
+      else if (normTitle.includes('bmri')) code = 'BMRI';
+      else if (normTitle.includes('tlkm')) code = 'TLKM';
+      return { category: 'Saham' as const, code, isAsset: true };
+    }
+    
+    // MutualFund
+    if (normTitle.includes('reksadana') || normTitle.includes('reksa dana') || normTitle.includes('mutualfund') || normTitle.includes('mutual fund') || normTitle.includes('bibit')) {
+      return { category: 'MutualFund' as const, code: 'MUTUAL_FUND', isAsset: true };
+    }
+    
+    // Forex
+    if (normTitle.includes('forex') || normTitle.includes('valas') || normTitle.includes('usd') || normTitle.includes('dollar') || normTitle.includes('dolar')) {
+      return { category: 'Forex' as const, code: 'USD', isAsset: true };
+    }
+    
+    // Properti
+    if (normTitle.includes('apartemen') || normTitle.includes('tanah') || normTitle.includes('properti') || normTitle.includes('rumah')) {
+      return { category: 'Properti' as const, code: 'PROP', isAsset: true };
+    }
+    
+    return { category: 'Gold' as const, code: '', isAsset: false };
+  };
+
   // AI commit handler
   const handleCommitAI = (parsed: ParsedTransaction) => {
+    // 1. Commit normal financial transaction
     handleAddTransaction({
       title: parsed.title,
       nominal: parsed.nominal,
@@ -559,6 +607,72 @@ interface UserProfile {
       source: parsed.source,
       date: parsed.date
     });
+
+    // 2. If it is an asset acquisition, directly add it to the asset portfolio
+    const isPurchase = parsed.type === 'Pengeluaran';
+    if (isPurchase) {
+      const assetInfo = detectAssetCategoryAndCode(parsed.title);
+      if (assetInfo.isAsset) {
+        let logo = '🟡';
+        if (assetInfo.category === 'Crypto') logo = '🪙';
+        if (assetInfo.category === 'Saham') logo = '📈';
+        if (assetInfo.category === 'MutualFund') logo = '💼';
+        if (assetInfo.category === 'Forex') logo = '💵';
+        if (assetInfo.category === 'Properti') logo = '🏠';
+
+        const categoryLabel = assetInfo.category === 'Gold' ? 'Emas (Logam Mulia)' :
+                              assetInfo.category === 'Crypto' ? 'Kripto Token' :
+                              assetInfo.category === 'Saham' ? 'Saham Pasar' :
+                              assetInfo.category === 'MutualFund' ? 'Reksa Dana' :
+                              assetInfo.category === 'Forex' ? 'Valas' : 'Properti';
+
+        const existingAsset = assets.find(a => a.category === assetInfo.category);
+        if (existingAsset) {
+          const newUnits = existingAsset.units + 1;
+          const newBuyPrice = Math.round((existingAsset.units * existingAsset.buyPrice + parsed.nominal) / newUnits);
+          handleEditAsset(existingAsset.id, {
+            units: newUnits,
+            buyPrice: newBuyPrice,
+            marketPrice: parsed.nominal
+          });
+          showToast(`Terdeteksi pembelian! Mengakumulasi unit ke kategori "${categoryLabel}".`, 'success');
+        } else {
+          handleAddAsset({
+            name: categoryLabel,
+            code: assetInfo.code || 'VAR',
+            category: assetInfo.category,
+            units: 1,
+            buyPrice: parsed.nominal,
+            marketPrice: parsed.nominal,
+            logo: logo
+          });
+          showToast(`Terdeteksi pembelian baru! Berhasil mencatat ke tabungan "${categoryLabel}".`, 'success');
+        }
+      }
+    }
+  };
+
+  const [navbarAiInput, setNavbarAiInput] = useState('');
+
+  const handleNavbarAiSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!navbarAiInput.trim()) return;
+
+    const parsed = parseFinanceText(navbarAiInput);
+    if (parsed && parsed.parsedOk && parsed.nominal > 0) {
+      handleAddTransaction({
+        title: parsed.title,
+        nominal: parsed.nominal,
+        type: parsed.type,
+        category: parsed.category,
+        source: parsed.source,
+        date: parsed.date
+      });
+      showToast(`AI Berhasil mencatat "${parsed.title}" sebesar ${formatCurrency(parsed.nominal)} ke ${parsed.source}!`, 'success');
+      setNavbarAiInput('');
+    } else {
+      showToast(`Gagal membaca nominal. Format contoh: 'makan bakso 25rb jago' atau 'gaji 5jt bca'.`, 'error');
+    }
   };
 
   // 4. GENERAL ACCOUNT / ASSETS / DEBTS MUTATION HANDLERS
@@ -938,11 +1052,11 @@ interface UserProfile {
     { id: 'dashboard', label: 'Dashboard', icon: BarChart2 },
     { id: 'transactions', label: 'Transaksi', icon: FileSpreadsheet },
     { id: 'accounts', label: 'Sumber Uang', icon: Wallet },
-    { id: 'ai-parser', label: 'AI Smart Input', icon: Sparkles },
     { id: 'assets', label: 'Tabungan Aset', icon: Award },
     { id: 'debts', label: 'Hutang Piutang', icon: HeartPulse },
     { id: 'calendar', label: 'Kalender', icon: Calendar },
     { id: 'statistics', label: 'Statistik Kas', icon: TrendingUp },
+    { id: 'settings', label: 'Pengaturan', icon: Settings },
   ];
 
   return (
@@ -1006,47 +1120,115 @@ interface UserProfile {
             );
           })}
         </nav>
-
-        {/* Setting / Logout switchers */}
-        <div className="p-4 border-t border-white/[0.05] space-y-2.5">
-          <button 
-            onClick={() => setActiveTab('settings')}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition-all text-[#9aa4bf] hover:text-white cursor-pointer`}
-          >
-            <Settings className="h-4.5 w-4.5" />
-            <span>Pengaturan</span>
-          </button>
-        </div>
       </aside>
 
       {/* 2. MAIN HUB WORKSPACE CONTAINER */}
       <div className="flex-1 flex flex-col min-w-0">
         
         {/* TOP COMPONENT HEADER BAR */}
-        <header className={`h-16 flex items-center justify-between px-6 border-b shrink-0 z-20 ${
+        <header className={`h-auto md:h-16 py-3 md:py-0 flex flex-col md:flex-row items-center justify-between px-4 md:px-6 gap-3 md:gap-0 border-b shrink-0 z-20 ${
           isLight ? 'bg-white border-slate-200' : 'bg-[#0b1020]/60 backdrop-blur-md border-white/[0.06]'
         }`}>
-          <div className="flex items-center gap-2 md:gap-4">
-            {/* Mobile menu logo triggers */}
-            <button 
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="xl:hidden p-2 text-[#9aa4bf] hover:text-white cursor-pointer"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            
-            {/* Real-time automated dynamic greetings */}
-            <div className="hidden sm:block">
-              <span className="text-xs text-[#00d4ff] font-mono leading-none tracking-widest uppercase font-bold">
-                {getFriendlyGreeting()} • 
+          {/* Row 1 for Mobile: Hamburgers, App Title and Quick Badges */}
+          <div className="flex items-center justify-between w-full md:w-auto shrink-0">
+            <div className="flex items-center gap-2 md:gap-4">
+              {/* Mobile menu logo triggers */}
+              <button 
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="xl:hidden p-2 text-[#9aa4bf] hover:text-white cursor-pointer"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              
+              <span className="xl:hidden text-xs font-extrabold tracking-tight uppercase font-mono text-[#7c5cff]">
+                Laporan Keuangan
               </span>
-              <p className="text-xs font-bold text-[#9aa4bf] inline ml-1">
-                {userProfile.dashboardName}
-              </p>
+
+              {/* Real-time automated dynamic greetings */}
+              <div className="hidden lg:block">
+                <span className="text-xs text-[#00d4ff] font-mono leading-none tracking-widest uppercase font-bold">
+                  {getFriendlyGreeting()} • 
+                </span>
+                <p className="text-xs font-bold text-[#9aa4bf] inline ml-1">
+                  {userProfile.dashboardName}
+                </p>
+              </div>
+            </div>
+
+            {/* Row 1 mobile icons block */}
+            <div className="flex md:hidden items-center gap-2">
+              <button
+                onClick={() => setUserProfile(prev => ({
+                  ...prev,
+                  themeMode: prev.themeMode === 'light' ? 'dark' : 'light'
+                }))}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors bg-white/[0.02] border border-white/5 cursor-pointer"
+                title="Ganti Tema"
+              >
+                {isLight ? <Moon className="h-4 w-4 text-indigo-400" /> : <Sun className="h-4 w-4 text-amber-400" />}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('settings')}
+                className={`p-1.5 rounded-lg transition-colors border cursor-pointer ${
+                  activeTab === 'settings'
+                    ? 'bg-[#7c5cff]/20 text-white border-[#7c5cff]/30'
+                    : 'text-slate-400 hover:text-white bg-white/[0.02] border-white/5'
+                }`}
+                title="Pengaturan"
+              >
+                <Settings className="h-4 w-4" />
+              </button>
+
+              <img 
+                src={userProfile.avatarUrl} 
+                alt="Avatar" 
+                className="h-7 w-7 rounded-full object-cover ring-1 ring-[#7c5cff]/30 cursor-pointer"
+                onClick={() => setActiveTab('settings')}
+              />
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          {/* AI SMART QUICK INPUT FORM IN NAVBAR */}
+          <form 
+            onSubmit={handleNavbarAiSubmit} 
+            className="w-full md:flex-1 md:max-w-md mx-0 md:mx-6 relative group"
+            id="navbar-ai-quick-input"
+          >
+            <div className={`relative flex items-center h-10 w-full rounded-xl transition-all duration-300 border ${
+              isLight 
+                ? 'bg-slate-50 border-slate-200 focus-within:border-[#7c5cff] focus-within:ring-2 focus-within:ring-[#7c5cff]/20 shrink-0' 
+                : 'bg-[#12182d]/60 border-white/[0.08] focus-within:border-[#7c5cff] focus-within:ring-2 focus-within:ring-[#7c5cff]/20 shrink-0'
+            }`}>
+              {/* Left Sparkles Icon */}
+              <div className="absolute left-3 text-violet-400 group-hover:scale-110 transition-transform flex items-center justify-center">
+                <Sparkles className="h-4 w-4 text-[#7c5cff]" />
+              </div>
+
+              {/* Text Input */}
+              <input
+                type="text"
+                value={navbarAiInput}
+                onChange={(e) => setNavbarAiInput(e.target.value)}
+                placeholder="Catat cepat (AI): 'makan bakso 25rb jago'..."
+                className={`w-full pl-9 pr-14 bg-transparent text-xs font-semibold focus:outline-none placeholder:text-[#9aa4bf]/60 ${
+                  isLight ? 'text-slate-800' : 'text-slate-100'
+                }`}
+              />
+
+              {/* Submit Button inside input container */}
+              <button
+                type="submit"
+                className="absolute right-1.5 h-7 px-2.5 text-[10px] font-bold text-white bg-gradient-to-r from-[#7c5cff] to-[#6c4be6] hover:from-[#6c4be6] hover:to-[#5a3bc2] rounded-lg transition-all active:scale-95 shadow-md shadow-violet-500/10 cursor-pointer flex items-center gap-1"
+              >
+                <span>Catat</span>
+                <ChevronRight className="h-3 w-3 opacity-80" />
+              </button>
+            </div>
+          </form>
+
+          {/* Desktop controls listing */}
+          <div className="hidden md:flex items-center gap-4 shrink-0">
             {/* Accent colored state pill */}
             <span className="hidden md:inline-block px-1.5 py-1 text-[9px] font-mono font-bold bg-[#7c5cff]/20 text-white rounded-md tracking-wider">
               IDR NET SALDO: {formatCurrency(totalInflowSum)}
@@ -1062,6 +1244,19 @@ interface UserProfile {
               title="Ganti Tema Visual"
             >
               {isLight ? <Moon className="h-4.5 w-4.5 text-indigo-400" /> : <Sun className="h-4.5 w-4.5 text-amber-400" />}
+            </button>
+
+            {/* Quick settings button */}
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`p-2 rounded-xl transition-colors border cursor-pointer ${
+                activeTab === 'settings'
+                  ? 'bg-[#7c5cff]/20 text-white border-[#7c5cff]/30'
+                  : 'text-slate-400 hover:text-white bg-white/[0.02] border-white/5'
+              }`}
+              title="Pengaturan"
+            >
+              <Settings className="h-4.5 w-4.5" />
             </button>
 
             {/* Mini avatar frame */}
@@ -1107,24 +1302,12 @@ interface UserProfile {
                   );
                 })}
               </div>
-
-              <div className="absolute bottom-4 inset-x-4 space-y-2">
-                <button 
-                  onClick={() => {
-                    setActiveTab('settings');
-                    setMobileMenuOpen(false);
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-[#9aa4bf]"
-                >
-                  <Settings className="h-4 w-4" /> Configs
-                </button>
-              </div>
             </div>
           </div>
         )}
 
         {/* 3. WORKING WORKSPACE PANELS ROUTER */}
-        <main className="flex-1 py-4 px-4 sm:px-6 overflow-y-auto">
+        <main className="flex-1 py-4 px-4 sm:px-6 pb-20 xl:pb-4 overflow-y-auto">
           <div className="max-w-5xl mx-auto">
             {activeTab === 'dashboard' && (
               <DashboardView
@@ -1146,6 +1329,7 @@ interface UserProfile {
                 onEditTransaction={handleEditTransaction}
                 onDeleteTransaction={handleDeleteTransaction}
                 onDuplicateTransaction={handleDuplicateTransaction}
+                onCommitAI={handleCommitAI}
               />
             )}
 
@@ -1190,13 +1374,6 @@ interface UserProfile {
               />
             )}
 
-            {activeTab === 'ai-parser' && (
-              <AiInputView
-                accounts={accounts}
-                onCommitTransaction={handleCommitAI}
-              />
-            )}
-
             {/* SETTINGS PANEL COMPONENT VIEW CONTAINER */}
             {activeTab === 'settings' && (
               <div className="space-y-6">
@@ -1229,14 +1406,65 @@ interface UserProfile {
                   </div>
 
                   {/* Upload photo simulation links */}
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     <label className="text-[10px] text-[#9aa4bf] uppercase font-bold tracking-wider font-mono block">Profile Picture Avatar URL</label>
-                    <input 
-                      type="text" 
-                      value={userProfile.avatarUrl}
-                      onChange={(e) => setUserProfile(prev => ({ ...prev, avatarUrl: e.target.value }))}
-                      className="w-full px-3 py-2 bg-[#0c1020] text-xs text-white rounded-xl border border-white/5 focus:outline-none focus:border-[#7c5cff]"
-                    />
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 bg-white/[0.01] border border-white/5 p-3.5 rounded-xl">
+                      {/* Image Preview */}
+                      <div className="h-16 w-16 rounded-full overflow-hidden border-2 border-[#7c5cff]/30 bg-[#0c1020] shrink-0 flex items-center justify-center relative group">
+                        {userProfile.avatarUrl ? (
+                          <img 
+                            src={userProfile.avatarUrl} 
+                            alt="Avatar Preview" 
+                            className="h-full w-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80';
+                            }}
+                          />
+                        ) : (
+                          <span className="text-[10px] text-[#9aa4bf]">No Pic</span>
+                        )}
+                      </div>
+
+                      {/* Controls */}
+                      <div className="flex-1 space-y-2.5 min-w-0 text-left">
+                        <input 
+                          type="text" 
+                          placeholder="Paste image URL here..."
+                          value={userProfile.avatarUrl}
+                          onChange={(e) => setUserProfile(prev => ({ ...prev, avatarUrl: e.target.value }))}
+                          className="w-full px-3 py-2 bg-[#0c1020] text-xs text-white rounded-xl border border-white/5 focus:outline-none focus:border-[#7c5cff]"
+                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="px-3 py-1.5 bg-[#7c5cff]/10 hover:bg-[#7c5cff]/20 text-[#a994ff] hover:text-[#cabafe] rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer border border-[#7c5cff]/20 transition-all">
+                            <Upload className="h-3.5 w-3.5" /> Pilih File Gambar
+                            <input 
+                              type="file" 
+                              accept="image/*"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    if (typeof reader.result === 'string') {
+                                      setUserProfile(prev => ({ ...prev, avatarUrl: reader.result as string }));
+                                    }
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                              className="hidden"
+                            />
+                          </label>
+                          <button 
+                            type="button"
+                            onClick={() => setUserProfile(prev => ({ ...prev, avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80' }))}
+                            className="px-3 py-1.5 bg-white/[0.03] hover:bg-white/[0.08] text-[#9aa4bf] hover:text-white rounded-xl text-xs font-bold transition-all border border-white/5 cursor-pointer"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Backup / Restore Database files */}
@@ -1342,7 +1570,7 @@ interface UserProfile {
                   {/* Reset Database Trigger danger button */}
                   <div className="pt-6 border-t border-red-500/10 space-y-2">
                     <h3 className="text-xs font-bold text-[#ff5c7a] uppercase tracking-wider font-mono">Zona Penghancuran Data</h3>
-                    <p className="text-[11px] text-[#9aa4bf]">Setel ulang seluruh transaksi, sumber uang BCA, dan liabilitas aset kembali ke titik nol.</p>
+                    <p className="text-[11px] text-[#9aa4bf]">Setel ulang seluruh transaksi, sumber uang BCA, dan hutang aset kembali ke titik nol.</p>
                     <button 
                       onClick={() => setShowResetConfirm(true)}
                       className="px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-[#ff5c7a] rounded-xl text-xs font-bold cursor-pointer border border-red-500/20 transition-colors"
@@ -1545,7 +1773,7 @@ interface UserProfile {
         )}
 
         {/* MOBILE BOTTOM NAVIGATION PANEL BAR */}
-        <div className={`xl:hidden h-14 border-t flex items-center justify-around px-2 z-10 ${
+        <div className={`xl:hidden fixed bottom-0 left-0 right-0 h-14 border-t flex items-center justify-around px-2 z-30 shadow-[0_-4px_12px_rgba(0,0,0,0.15)] ${
           isLight ? 'bg-white border-slate-200' : 'bg-[#0b1020] border-white/[0.06]'
         }`}>
           {menuItems.slice(0, 4).map(item => {

@@ -50,12 +50,31 @@ export function StatistikView({ transactions }: StatistikViewProps) {
     if (!catCtx || !flowCtx) return;
 
     // Render Doughnut Chart (Categories)
-    const catLabels = sortedCategories.slice(0, 5).map(c => c[0]);
-    const catData = sortedCategories.slice(0, 5).map(c => c[1]);
-    if (sortedCategories.length > 5) {
-      const restSum = sortedCategories.slice(5).reduce((sum, c) => sum + c[1], 0);
+    const getCategoryLabel = (cat: string) => {
+      if (cat === 'Transport') return 'Transportasi';
+      return cat;
+    };
+
+    let filteredCats = [...sortedCategories];
+    let lainnyaSum = 0;
+    
+    // Extract any existing 'Lainnya' so we only append a single collective 'Lainnya'
+    const lainnyaIdx = filteredCats.findIndex(([cat]) => cat === 'Lainnya');
+    if (lainnyaIdx !== -1) {
+      lainnyaSum = filteredCats[lainnyaIdx][1];
+      filteredCats.splice(lainnyaIdx, 1);
+    }
+    
+    const topCats = filteredCats.slice(0, 5);
+    const restCats = filteredCats.slice(5);
+    
+    const catLabels = topCats.map(c => getCategoryLabel(c[0]));
+    const catData = topCats.map(c => c[1]);
+    
+    let otherSum = restCats.reduce((sum, c) => sum + c[1], 0) + lainnyaSum;
+    if (otherSum > 0) {
       catLabels.push('Lainnya');
-      catData.push(restSum);
+      catData.push(otherSum);
     }
 
     const catChart = new Chart(catCtx, {
@@ -75,8 +94,13 @@ export function StatistikView({ transactions }: StatistikViewProps) {
         responsive: true,
         plugins: {
           legend: { 
-            position: 'right',
-            labels: { color: '#ffffff', font: { size: 10 } }
+            position: 'bottom',
+            labels: { 
+              color: '#ffffff', 
+              font: { size: 9 }, 
+              boxWidth: 10,
+              padding: 10
+            }
           },
           tooltip: {
             backgroundColor: 'rgba(15, 23, 42, 0.9)',
@@ -172,7 +196,7 @@ export function StatistikView({ transactions }: StatistikViewProps) {
       {/* CORE STAT METRICS ROW */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-4 bg-white/[0.02] border border-white/[0.06] rounded-2xl shadow">
-          <span className="text-[9px] text-[#9aa4bf] font-mono uppercase tracking-widest block">Rerata Sekali Transaksi Jajan</span>
+          <span className="text-[9px] text-[#9aa4bf] font-mono uppercase tracking-widest block">Rerata Sekali Pengeluaran Rutin</span>
           <span className="text-base font-bold text-white mt-1.5 block">{formatCurrency(averageSpending)}</span>
         </div>
 

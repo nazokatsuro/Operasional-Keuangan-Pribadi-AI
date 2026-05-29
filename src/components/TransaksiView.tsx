@@ -6,12 +6,14 @@
 import React, { useState } from 'react';
 import { 
   Plus, Edit2, Copy, Trash2, Search, Filter, SlidersHorizontal, ArrowUpDown,
-  TrendingUp, TrendingDown, X, Upload, Calendar, RefreshCw, FileText, Check, AlertCircle
+  TrendingUp, TrendingDown, X, Upload, Calendar, RefreshCw, FileText, Check, AlertCircle,
+  Sparkles
 } from 'lucide-react';
 import { 
   Transaction, Account, formatCurrency, 
   INCOME_CATEGORIES, EXPENSE_CATEGORIES 
 } from '../utils/financeHelper';
+import { AiInputView } from './AiInputView';
 
 interface TransaksiViewProps {
   transactions: Transaction[];
@@ -20,6 +22,7 @@ interface TransaksiViewProps {
   onEditTransaction: (id: string, tx: Partial<Transaction>) => void;
   onDeleteTransaction: (id: string) => void;
   onDuplicateTransaction: (tx: Transaction) => void;
+  onCommitAI?: (tx: any) => void;
 }
 
 export function TransaksiView({
@@ -28,10 +31,12 @@ export function TransaksiView({
   onAddTransaction,
   onEditTransaction,
   onDeleteTransaction,
-  onDuplicateTransaction
+  onDuplicateTransaction,
+  onCommitAI
 }: TransaksiViewProps) {
   // Navigation Search & Filter State
   const [search, setSearch] = useState('');
+  const [activeSubTab, setActiveSubTab] = useState<'manual' | 'ai'>('manual');
   const [filterType, setFilterType] = useState<'all' | 'Pemasukan' | 'Pengeluaran'>('all');
   const [filterSource, setFilterSource] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'nominal-desc' | 'nominal-asc'>('date-desc');
@@ -148,22 +153,54 @@ export function TransaksiView({
 
   return (
     <div className="space-y-6">
-      {/* HEADER SECTION */}
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+      {/* HEADER SECTION WITH FLEXIBILITY & ACTION BUTTONS ON THE EDGE AS REQUESTED */}
+      <div className="flex flex-col xl:flex-row justify-between xl:items-center gap-4 border-b border-white/[0.04] pb-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-white">Mutasi Transaksi LKP</h1>
           <p className="text-xs text-[#9aa4bf]">Administrasikan log pengeluaran dan pemasukan Anda secara visual</p>
         </div>
-        <button 
-          onClick={handleOpenAdd}
-          className="flex items-center gap-1.5 px-4.5 py-2.5 rounded-2xl bg-[#7c5cff] text-white font-bold text-xs hover:bg-[#6847ff] hover:shadow-[0_0_20px_rgba(124,92,255,0.4)] active:scale-95 transition-all cursor-pointer"
-        >
-          <Plus className="h-4 w-4" /> Catat Transaksi
-        </button>
+        
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 self-stretch xl:self-auto shrink-0 select-none">
+          {/* Sub-tab Switcher Bar moved next to Catat Transaksi */}
+          <div className="flex bg-[#0c1020] p-1 rounded-xl border border-white/[0.06] sm:w-[260px] shrink-0 h-[42px] items-center">
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('manual')}
+              className={`flex-1 px-3 py-1.5 text-[11px] font-black rounded-lg transition-all cursor-pointer h-full flex items-center justify-center ${
+                activeSubTab === 'manual'
+                  ? 'bg-[#7c5cff] text-white shadow-md'
+                  : 'text-[#9aa4bf] hover:text-white'
+              }`}
+            >
+              Mutasi Manual
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('ai')}
+              className={`flex-1 px-3 py-1.5 text-[11px] font-black rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1 h-full ${
+                activeSubTab === 'ai'
+                  ? 'bg-[#7c5cff] text-white shadow-md'
+                  : 'text-[#9aa4bf] hover:text-white'
+              }`}
+            >
+              <Sparkles className="h-3.5 w-3.5 text-[#a855f7]" />
+              AI Smart Input
+            </button>
+          </div>
+
+          <button 
+            onClick={handleOpenAdd}
+            className="flex items-center justify-center gap-1.5 px-4.5 py-2.5 rounded-xl bg-[#7c5cff] text-white font-bold text-xs hover:bg-[#6847ff] hover:shadow-[0_0_20px_rgba(124,92,255,0.4)] active:scale-95 transition-all cursor-pointer h-[42px] shrink-0"
+          >
+            <Plus className="h-4 w-4" /> Catat Transaksi
+          </button>
+        </div>
       </div>
 
-      {/* SEARCH AND FILTERS STYLING */}
-      <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-3 shadow-lg">
+      {activeSubTab === 'manual' ? (
+        <>
+          {/* SEARCH AND FILTERS STYLING */}
+          <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-3 shadow-lg">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           {/* Search Bar */}
           <div className="relative md:col-span-2">
@@ -225,7 +262,8 @@ export function TransaksiView({
 
       {/* CORE TRANSACTIONS LIST CARD GRID / TABLE */}
       <div className="bg-white/[0.02] border border-white/[0.06] rounded-[28px] overflow-hidden shadow-xl">
-        <div className="overflow-x-auto">
+        {/* DESKTOP VIEW: Classical Structured Table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[600px]">
             <thead>
               <tr className="bg-white/[0.03] text-[10px] uppercase font-mono tracking-widest text-[#9aa4bf] border-b border-white/[0.04]">
@@ -273,24 +311,24 @@ export function TransaksiView({
                       <p className="text-xs text-[#9aa4bf] font-mono">{tx.date}</p>
                     </td>
                     <td className="px-5 py-4.5">
-                      <div className="flex items-center justify-center gap-1.5 opacity-80 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-center gap-1.5 opacity-100 transition-opacity">
                         <button 
                           onClick={() => handleOpenEdit(tx)}
-                          className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/10 text-white transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-[#7c5cff]/30 text-white transition-colors cursor-pointer"
                           title="Edit"
                         >
                           <Edit2 className="h-3.5 w-3.5" />
                         </button>
                         <button 
                           onClick={() => onDuplicateTransaction(tx)}
-                          className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/10 text-emerald-400 transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-emerald-500/30 text-emerald-400 transition-colors cursor-pointer"
                           title="Duplicate"
                         >
                           <Copy className="h-3.5 w-3.5" />
                         </button>
                         <button 
                           onClick={() => setTxToDelete(tx.id)}
-                          className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-[#ff5c7a] transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/30 text-[#ff5c7a] transition-colors cursor-pointer"
                           title="Hapus"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -302,6 +340,77 @@ export function TransaksiView({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* MOBILE VIEW: Stacked Card Layout */}
+        <div className="block md:hidden divide-y divide-white/[0.04]">
+          {filteredTransactions.length === 0 ? (
+            <div className="text-center py-10 px-4">
+              <p className="text-xs text-[#9aa4bf]">Tidak ada data transaksi yang cocok dengan kriteria filter.</p>
+            </div>
+          ) : (
+            filteredTransactions.map((tx) => (
+              <div key={tx.id} className="p-4 flex flex-col gap-3 hover:bg-white/[0.01] transition-colors">
+                {/* Row 1: Title & Nominal */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-xs font-bold text-white leading-tight break-words">{tx.title}</p>
+                      {tx.isRecurring && (
+                        <span className="text-[7px] font-mono bg-[#7c5cff]/20 text-[#7c5cff] px-1 py-0.2 rounded leading-none">Rutin</span>
+                      )}
+                    </div>
+                    {tx.note && <p className="text-[10px] text-[#9aa4bf] mt-0.5 line-clamp-1">{tx.note}</p>}
+                  </div>
+                  
+                  <div className="shrink-0 text-right">
+                    <p className={`text-xs font-black font-mono ${tx.type === 'Pemasukan' ? 'text-[#16c784]' : 'text-[#ff5c7a]'}`}>
+                      {tx.type === 'Pemasukan' ? '+' : '-'}{formatCurrency(tx.nominal)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Row 2: Badges/Meta and Actions */}
+                <div className="flex items-center justify-between gap-2 mt-1">
+                  <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                    <span className="text-[10px] text-white font-mono bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 truncate max-w-[80px]">
+                      {tx.source}
+                    </span>
+                    <span className="text-[10px] text-[#9aa4bf] bg-white/[0.02] px-1.5 py-0.5 rounded">
+                      {tx.category}
+                    </span>
+                    <span className="text-[10px] font-mono text-[#9aa4bf]/80">
+                      {tx.date}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button 
+                      onClick={() => handleOpenEdit(tx)}
+                      className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-[#7c5cff]/20 active:bg-[#7c5cff]/30 text-[#00d4ff] transition-all cursor-pointer"
+                      title="Edit"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </button>
+                    <button 
+                      onClick={() => onDuplicateTransaction(tx)}
+                      className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-400 transition-all cursor-pointer"
+                      title="Duplikat"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                    <button 
+                      onClick={() => setTxToDelete(tx.id)}
+                      className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/30 text-[#ff5c7a] transition-all cursor-pointer"
+                      title="Hapus"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -335,6 +444,13 @@ export function TransaksiView({
             </div>
           </div>
         </div>
+      )}
+        </>
+      ) : (
+        <AiInputView
+          accounts={accounts}
+          onCommitTransaction={onCommitAI || onAddTransaction}
+        />
       )}
 
       {/* SLIDE-IN POPUP MODAL */}

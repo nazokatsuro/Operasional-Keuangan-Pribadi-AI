@@ -167,62 +167,62 @@ export function SumberUangView({
       </div>
 
       {/* ACCOUNTS GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-5">
         {accounts.map((acc) => {
           const percentage = totalBalanceAllSources > 0 ? (acc.balance / totalBalanceAllSources) * 100 : 0;
           return (
             <div 
               key={acc.id}
-              className={`relative overflow-hidden bg-gradient-to-br ${acc.color || 'from-[#11182d] to-[#060814]'} p-5.5 rounded-3xl border border-white/[0.06] hover:-translate-y-1.5 transition-all duration-300 shadow-lg flex flex-col justify-between min-h-[190px] group`}
+              className={`relative overflow-hidden bg-gradient-to-br ${acc.color || 'from-[#11182d] to-[#060814]'} p-3 sm:p-5.5 rounded-2xl sm:rounded-3xl border border-white/[0.06] hover:-translate-y-1.5 transition-all duration-300 shadow-lg flex flex-col justify-between min-h-[125px] sm:min-h-[190px] group`}
             >
               {/* Card Holographic Flare effect */}
               <div className="absolute -top-12 -right-12 w-28 h-28 bg-white/[0.03] group-hover:bg-white/[0.06] rounded-full blur-xl pointer-events-none transition-all duration-300"></div>
               
-              <div className="flex justify-between items-start relative z-10">
-                <div className="flex items-center gap-2.5">
-                  <span className="p-2.5 rounded-xl bg-white/10 text-white shadow-sm backdrop-blur-md flex items-center justify-center">
+              <div className="flex justify-between items-center relative z-10 gap-2 w-full">
+                <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1">
+                  <span className="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl bg-white/10 text-white shadow-sm backdrop-blur-md flex items-center justify-center shrink-0">
                     {renderIcon(acc.iconName || 'CreditCard')}
                   </span>
-                  <div>
-                    <h3 className="text-sm font-black text-white uppercase tracking-wide">{acc.name}</h3>
+                  <div className="min-w-0">
+                    <h3 className="text-xs sm:text-sm font-black text-white uppercase tracking-wide truncate">{acc.name}</h3>
                     {acc.accountNumber && (
-                      <p className="text-[10px] font-mono text-white/60 mt-0.5 tracking-wider font-semibold">{acc.accountNumber}</p>
+                      <p className="text-[8px] sm:text-[10px] font-mono text-white/60 mt-0.5 tracking-wider font-semibold truncate">{acc.accountNumber}</p>
                     )}
                   </div>
                 </div>
 
-                <div className="flex gap-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
+                <div className="flex gap-1 opacity-60 sm:opacity-40 group-hover:opacity-100 transition-opacity shrink-0">
                   <button 
                     onClick={() => handleOpenEdit(acc)}
-                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                    className="p-1 sm:p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
                     title="Ubah Rincian"
                   >
-                    <Edit2 className="h-3.5 w-3.5" />
+                    <Edit2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                   </button>
                   <button 
                     onClick={() => onDeleteAccount(acc.id)}
-                    className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/30 text-red-200 hover:text-red-400 transition-colors cursor-pointer"
+                    className="p-1 sm:p-1.5 rounded-md bg-red-500/10 hover:bg-red-500/30 text-red-200 hover:text-red-400 transition-colors cursor-pointer"
                     title="Hapus"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                   </button>
                 </div>
               </div>
 
-              <div className="mt-6 relative z-10 text-left">
-                <p className="text-[9px] font-mono text-white/50 uppercase tracking-widest font-black">SALDO REKENING</p>
-                <div className="flex justify-between items-end mt-1">
-                  <h4 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-none">
+              <div className="mt-3 sm:mt-6 relative z-10 text-left">
+                <p className="text-[8px] sm:text-[9px] font-mono text-white/50 uppercase tracking-widest font-black leading-none">SALDO REKENING</p>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mt-1 gap-1 w-full">
+                  <h4 className="text-xs sm:text-xl md:text-2xl font-black text-white tracking-tight leading-none truncate flex-1 min-w-0">
                     {formatCurrency(acc.balance)}
                   </h4>
-                  <span className="text-[10px] font-mono text-white/80 font-black px-2 py-0.5 bg-white/10 rounded-md backdrop-blur-md">
+                  <span className="text-[8px] sm:text-[10px] font-mono text-white/80 font-black px-1.5 py-0.5 bg-white/10 rounded-md backdrop-blur-md shrink-0">
                     {percentage.toFixed(1)}%
                   </span>
                 </div>
               </div>
 
               {/* Progress visual slider */}
-              <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden mt-4 relative z-10">
+              <div className="w-full bg-white/10 h-1 sm:h-1.5 rounded-full overflow-hidden mt-2.5 sm:mt-4 relative z-10">
                 <div 
                   className="h-full bg-white rounded-full transition-all duration-300 shadow-sm"
                   style={{ width: `${percentage}%` }}

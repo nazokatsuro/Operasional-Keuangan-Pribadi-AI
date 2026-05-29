@@ -99,6 +99,10 @@ export const EXPENSE_CATEGORIES = [
   { name: 'Top Up', color: '#a855f7', icon: 'ArrowUpRight' },
   { name: 'Pendidikan', color: '#eab308', icon: 'GraduationCap' },
   { name: 'Pajak', color: '#ef4444', icon: 'FileText' },
+  { name: 'Produksi', color: '#e066ff', icon: 'Scissors' },
+  { name: 'Logistik', color: '#ff8c00', icon: 'Truck' },
+  { name: 'Marketing', color: '#ff1493', icon: 'Megaphone' },
+  { name: 'Pinjaman', color: '#ffd700', icon: 'Handshake' },
   { name: 'Lainnya', color: '#94a3b8', icon: 'CircleEllipsis' },
 ];
 
