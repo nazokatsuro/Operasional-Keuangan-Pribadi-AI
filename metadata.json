@@ -1,0 +1,8 @@
+{
+  "name": "Operasional Keuangan Pribadi AI",
+  "description": "LAPORAN KEUANGAN PRIBADI AI PREMIUM” Buatkan aplikasi web FULL FEATURE modern",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
