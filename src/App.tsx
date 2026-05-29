@@ -939,7 +939,7 @@ interface UserProfile {
     { id: 'transactions', label: 'Transaksi', icon: FileSpreadsheet },
     { id: 'accounts', label: 'Sumber Uang', icon: Wallet },
     { id: 'ai-parser', label: 'AI Smart Input', icon: Sparkles },
-    { id: 'assets', label: 'Portofolio Aset', icon: Award },
+    { id: 'assets', label: 'Tabungan Aset', icon: Award },
     { id: 'debts', label: 'Hutang Piutang', icon: HeartPulse },
     { id: 'calendar', label: 'Kalender', icon: Calendar },
     { id: 'statistics', label: 'Statistik Kas', icon: TrendingUp },
