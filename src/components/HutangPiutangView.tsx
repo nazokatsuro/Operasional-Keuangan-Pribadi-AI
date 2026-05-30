@@ -377,9 +377,12 @@ export function HutangPiutangView({
                 <div className="space-y-1">
                   <label className="text-[10px] text-[#9aa4bf] uppercase font-bold tracking-wider font-mono block">Jumlah Uang (Rp)</label>
                   <input 
-                    type="number" 
-                    value={formNominal}
-                    onChange={(e) => setFormNominal(e.target.value)}
+                    type="text" 
+                    value={formNominal ? parseInt(formNominal, 10).toLocaleString('id-ID') : ''}
+                    onChange={(e) => {
+                      const rawVal = e.target.value.replace(/\D/g, '');
+                      setFormNominal(rawVal);
+                    }}
                     placeholder="0"
                     required
                     className="w-full px-3 py-2 bg-white/[0.04] text-xs text-white rounded-xl border border-white/5 focus:outline-none focus:border-[#7c5cff] font-mono"
@@ -388,9 +391,12 @@ export function HutangPiutangView({
                 <div className="space-y-1">
                   <label className="text-[10px] text-[#9aa4bf] uppercase font-bold tracking-wider font-mono block">Telah Dibayar (Rp)</label>
                   <input 
-                    type="number" 
-                    value={formPaidNominal}
-                    onChange={(e) => setFormPaidNominal(e.target.value)}
+                    type="text" 
+                    value={formPaidNominal ? parseInt(formPaidNominal, 10).toLocaleString('id-ID') : ''}
+                    onChange={(e) => {
+                      const rawVal = e.target.value.replace(/\D/g, '');
+                      setFormPaidNominal(rawVal);
+                    }}
                     placeholder="0"
                     required
                     className="w-full px-3 py-2 bg-white/[0.04] text-xs text-white rounded-xl border border-white/5 focus:outline-none focus:border-[#7c5cff] font-mono"
@@ -489,11 +495,19 @@ export function HutangPiutangView({
                   Jumlah Pembayaran (Rp)
                 </label>
                 <input 
-                  type="number" 
-                  value={payFormNominal}
-                  onChange={(e) => setPayFormNominal(e.target.value)}
+                  type="text" 
+                  value={payFormNominal ? parseInt(payFormNominal, 10).toLocaleString('id-ID') : ''}
+                  onChange={(e) => {
+                    const rawVal = e.target.value.replace(/\D/g, '');
+                    const maxAmount = payTargetDebt.nominal - payTargetDebt.paidNominal;
+                    const parsed = parseInt(rawVal, 10) || 0;
+                    if (parsed > maxAmount) {
+                      setPayFormNominal(maxAmount.toString());
+                    } else {
+                      setPayFormNominal(rawVal);
+                    }
+                  }}
                   placeholder="0"
-                  max={payTargetDebt.nominal - payTargetDebt.paidNominal}
                   required
                   className="w-full px-3 py-2 bg-white/[0.04] text-xs text-white rounded-xl border border-white/5 focus:outline-none focus:border-[#7c5cff] font-mono"
                 />

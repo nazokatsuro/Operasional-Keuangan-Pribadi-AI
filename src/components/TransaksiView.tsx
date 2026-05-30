@@ -521,9 +521,12 @@ export function TransaksiView({
                   <div className="relative">
                     <span className="absolute left-3 top-2 text-xs text-slate-500 font-mono">Rp</span>
                     <input 
-                      type="number" 
-                      value={formNominal}
-                      onChange={(e) => setFormNominal(e.target.value)}
+                      type="text" 
+                      value={formNominal ? parseInt(formNominal, 10).toLocaleString('id-ID') : ''}
+                      onChange={(e) => {
+                        const rawVal = e.target.value.replace(/\D/g, '');
+                        setFormNominal(rawVal);
+                      }}
                       placeholder="0"
                       required
                       className="w-full pl-9 pr-4 py-2 bg-white/[0.04] text-xs text-white rounded-xl border border-white/5 focus:outline-none focus:border-[#7c5cff] font-mono"

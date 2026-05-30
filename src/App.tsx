@@ -851,7 +851,7 @@ interface UserProfile {
         title: `Menerima Pinjaman: ${debt.personName}`,
         nominal: nominal,
         type: 'Pemasukan',
-        category: 'Lainnya Pemasukan',
+        category: 'Pinjaman',
         source: sourceAccountName,
         date: new Date().toISOString().split('T')[0]
       };
@@ -874,7 +874,7 @@ interface UserProfile {
           title: `Bayar Cicilan Awal ke: ${debt.personName}`,
           nominal: paidNominal,
           type: 'Pengeluaran',
-          category: 'Lainnya',
+          category: 'Pinjaman',
           source: sourceAccountName,
           date: new Date().toISOString().split('T')[0]
         });
@@ -924,7 +924,7 @@ interface UserProfile {
         title: `Memberikan Pinjaman: ${debt.personName}`,
         nominal: nominal,
         type: 'Pengeluaran',
-        category: 'Lainnya',
+        category: 'Pinjaman',
         source: sourceAccountName,
         date: new Date().toISOString().split('T')[0]
       };
@@ -947,7 +947,7 @@ interface UserProfile {
           title: `Terima Cicilan Awal dari: ${debt.personName}`,
           nominal: paidNominal,
           type: 'Pemasukan',
-          category: 'Lainnya Pemasukan',
+          category: 'Pinjaman',
           source: sourceAccountName,
           date: new Date().toISOString().split('T')[0]
         });
@@ -992,7 +992,7 @@ interface UserProfile {
         title: `Bayar Cicilan Hutang: ${debtItem.personName}`,
         nominal: actualPayAmount,
         type: 'Pengeluaran',
-        category: 'Lainnya',
+        category: 'Pinjaman',
         source: accountName,
         date: new Date().toISOString().split('T')[0]
       };
@@ -1015,7 +1015,7 @@ interface UserProfile {
         title: `Terima Cicilan Piutang: ${debtItem.personName}`,
         nominal: actualPayAmount,
         type: 'Pemasukan',
-        category: 'Lainnya Pemasukan',
+        category: 'Pinjaman',
         source: accountName,
         date: new Date().toISOString().split('T')[0]
       };
@@ -1135,6 +1135,81 @@ interface UserProfile {
 
     return warnings;
   }, [spentMap, categoryBudgets]);
+
+  const debtWarnings = React.useMemo(() => {
+    const warnings: Array<{
+      id: string;
+      type: 'Hutang' | 'Piutang';
+      personName: string;
+      nominal: number;
+      paidNominal: number;
+      dueDate: string;
+      diffDays: number;
+      isOverdue: boolean;
+      message: string;
+    }> = [];
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    debts.forEach(d => {
+      if (d.paidNominal < d.nominal) {
+        const due = new Date(d.dueDate);
+        due.setHours(0,0,0,0);
+        
+        const diffTime = due.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const remaining = d.nominal - d.paidNominal;
+
+        if (diffDays < 0) {
+          // Overdue
+          const msg = d.type === 'Piutang'
+            ? `🔴 PIUTANG OVERDUE: Konsumen ${d.personName} belum melunasi sisa tagihan Rp ${remaining.toLocaleString('id-ID')} (Lewat ${Math.abs(diffDays)} hari!)`
+            : `🔴 HUTANG OVERDUE: Tagihan pribadi Rp ${remaining.toLocaleString('id-ID')} ke ${d.personName} belum diselesaikan (Lewat ${Math.abs(diffDays)} hari!)`;
+
+          warnings.push({
+            id: d.id,
+            type: d.type,
+            personName: d.personName,
+            nominal: d.nominal,
+            paidNominal: d.paidNominal,
+            dueDate: d.dueDate,
+            diffDays,
+            isOverdue: true,
+            message: msg
+          });
+        } else if (diffDays <= 3) {
+          // Mendekati Tempo (0 to 3 days remaining)
+          let msg = '';
+          if (d.type === 'Piutang') {
+            msg = diffDays === 0
+              ? `⚠️ PIUTANG JATUH TEMPO: Sisa tagihan Konsumen ${d.personName} sebesar Rp ${remaining.toLocaleString('id-ID')} jatuh tempo HARI INI!`
+              : `⚠️ PIUTANG DEKAT TEMPO: Sisa tagihan Konsumen ${d.personName} sebesar Rp ${remaining.toLocaleString('id-ID')} jatuh tempo dalam ${diffDays} hari ke depan.`;
+          } else {
+            msg = diffDays === 0
+              ? `⚠️ HUTANG JATUH TEMPO: Tagihan pribadi Rp ${remaining.toLocaleString('id-ID')} ke ${d.personName} harus dibayar HARI INI!`
+              : `⚠️ HUTANG DEKAT TEMPO: Tagihan pribadi Rp ${remaining.toLocaleString('id-ID')} harus dibayar dalam ${diffDays} hari ke depan.`;
+          }
+
+          warnings.push({
+            id: d.id,
+            type: d.type,
+            personName: d.personName,
+            nominal: d.nominal,
+            paidNominal: d.paidNominal,
+            dueDate: d.dueDate,
+            diffDays,
+            isOverdue: false,
+            message: msg
+          });
+        }
+      }
+    });
+
+    return warnings;
+  }, [debts]);
+
+  const totalNotificationsCount = budgetWarnings.length + debtWarnings.length;
 
   // Active Menu List Items
   const menuItems = [
@@ -1268,50 +1343,77 @@ interface UserProfile {
                   }`}
                   title="Notifikasi"
                 >
-                  <Bell className={`h-4 w-4 ${budgetWarnings.length > 0 ? 'text-red-450' : ''}`} />
-                  {budgetWarnings.length > 0 && (
+                  <Bell className={`h-4 w-4 ${totalNotificationsCount > 0 ? 'text-red-400 font-bold' : ''}`} />
+                  {totalNotificationsCount > 0 && (
                     <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center">
-                      <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-red-650 opacity-75"></span>
+                      <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-red-600 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600 text-[8px] font-bold text-white items-center justify-center font-mono">
-                        {budgetWarnings.length}
+                        {totalNotificationsCount}
                       </span>
                     </span>
                   )}
                 </button>
 
                 {showNotificationDropdown && (
-                  <div className={`absolute right-[-60px] mt-2 w-64 rounded-xl border shadow-xl p-3 z-50 text-left animate-slide-in ${
+                  <div className={`absolute right-[-60px] mt-2 w-72 rounded-xl border shadow-xl p-3 z-50 text-left animate-slide-in ${
                     isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-[#0f1424] border-white/[0.08] text-white'
                   }`}>
                     <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.05] mb-2">
-                      <p className="text-[10px] font-black uppercase font-mono tracking-wider text-[#9aa4bf]">Anggaran Melebihi Batas</p>
-                      <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-00">
-                        {budgetWarnings.length} Batas
+                      <p className="text-[10px] font-black uppercase font-mono tracking-wider text-[#9aa4bf]">Peringatan Keuangan</p>
+                      <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                        totalNotificationsCount > 0 ? 'bg-red-500/15 text-red-400' : 'bg-emerald-500/15 text-emerald-400'
+                      }`}>
+                        {totalNotificationsCount} Kritis
                       </span>
                     </div>
-                    <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
-                      {budgetWarnings.length === 0 ? (
-                        <p className="text-[10px] text-[#9aa4bf] text-center py-2">Semua pengeluaran aman!</p>
+                    <div className="space-y-2 max-h-[220px] overflow-y-auto pr-0.5 animate-fade-in">
+                      {totalNotificationsCount === 0 ? (
+                        <p className="text-[10px] text-[#9aa4bf] text-center py-4 font-sans">Semua keuangan aman & terkendali!</p>
                       ) : (
-                        budgetWarnings.map((w, idx) => (
-                          <div key={idx} className="p-1.5 rounded bg-red-500/[0.03] border border-[#ff5c7a]/10 text-[10px]">
-                            <p className="font-bold text-white mb-0.5">{w.category}</p>
-                            <p className="text-[#9aa4bf] text-[9px] leading-tight">
-                              Terpakai <span className="text-[#ff5c7a] font-bold">{formatCurrency(w.spent)}</span> dari <span className="text-white font-bold">{formatCurrency(w.budget)}</span> ({w.percentage.toFixed(0)}%)
-                            </p>
-                          </div>
-                        ))
+                        <>
+                          {budgetWarnings.length > 0 && (
+                            <div className="space-y-1 pb-1">
+                              <p className="text-[8px] font-bold text-[#a5b4fc] uppercase font-mono tracking-wider">⚠️ Anggaran ({budgetWarnings.length})</p>
+                              {budgetWarnings.map((w, idx) => (
+                                <div key={idx} className="p-1.5 rounded bg-red-500/[0.03] border border-red-500/10 text-[9px] leading-snug">
+                                  Pengeluaran <span className="font-bold text-white">'{w.category}'</span> Rp {w.spent.toLocaleString()} dari Rp {w.budget.toLocaleString()} ({w.percentage.toFixed(0)}%).
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {debtWarnings.length > 0 && (
+                            <div className="space-y-1 pt-1 border-t border-white/[0.04]">
+                              <p className="text-[8px] font-bold text-[#fbcfe8] uppercase font-mono tracking-wider">📅 Tagihan ({debtWarnings.length})</p>
+                              {debtWarnings.map((w, idx) => (
+                                <div key={idx} className={`p-1.5 rounded border text-[9px] leading-snug ${
+                                  w.isOverdue ? 'bg-red-500/[0.03] border-red-500/10' : 'bg-amber-500/[0.02] border-amber-500/10'
+                                }`}>
+                                  {w.message}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
-                    <div className="pt-1.5 border-t border-white/[0.05] mt-1.5 text-right">
+                    <div className="pt-2 border-t border-white/[0.05] mt-2 flex justify-between items-center text-[9px]">
+                      <button
+                        onClick={() => {
+                          setShowNotificationDropdown(false);
+                          setActiveTab('debts');
+                        }}
+                        className="font-bold text-[#fbcfe8] hover:text-white uppercase font-mono text-[8px]"
+                      >
+                        Kelola Tagihan
+                      </button>
                       <button
                         onClick={() => {
                           setShowNotificationDropdown(false);
                           setActiveTab('settings');
                         }}
-                        className="text-[9px] font-bold text-[#7c5cff]"
+                        className="font-bold text-[#7c5cff] hover:text-[#977eff] uppercase font-mono text-[8px]"
                       >
-                        Atur Batas Anggaran
+                        Atur Anggaran
                       </button>
                     </div>
                   </div>
@@ -1405,16 +1507,16 @@ interface UserProfile {
                     ? 'bg-[#7c5cff]/20 text-white border-[#7c5cff]/30 shadow-md shadow-violet-500/10'
                     : 'text-slate-400 hover:text-white bg-white/[0.02] border-white/5 hover:border-white/10'
                 }`}
-                title="Notifikasi Anggaran"
+                title="Notifikasi Sistem"
               >
-                <Bell className={`h-4.5 w-4.5 ${budgetWarnings.length > 0 ? 'text-red-400 font-bold' : ''}`} />
+                <Bell className={`h-4.5 w-4.5 ${totalNotificationsCount > 0 ? 'text-red-400 font-bold animate-pulse' : ''}`} />
                 
                 {/* 2. Pulsing Notification Badge */}
-                {budgetWarnings.length > 0 && (
+                {totalNotificationsCount > 0 && (
                   <span className="absolute -top-1 -right-1 flex h-4.5 w-4.5 items-center justify-center">
-                    <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-red-600 opacity-75"></span>
+                    <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-red-650 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-600 text-[9px] font-bold text-white items-center justify-center font-mono">
-                      {budgetWarnings.length}
+                      {totalNotificationsCount}
                     </span>
                   </span>
                 )}
@@ -1422,66 +1524,97 @@ interface UserProfile {
 
               {/* 3. Konten Dropdown Notifikasi */}
               {showNotificationDropdown && (
-                <div className={`absolute right-0 mt-2.5 w-80 sm:w-96 rounded-2xl border shadow-2xl p-4 z-50 text-left animate-slide-in ${
+                <div className={`absolute right-0 mt-2.5 w-80 sm:w-[420px] rounded-2xl border shadow-2xl p-4 z-50 text-left animate-slide-in ${
                   isLight 
                     ? 'bg-white border-slate-200 text-slate-800' 
                     : 'bg-[#0f1424] border-white/[0.08] text-white'
                 }`}>
                   <div className="flex items-center justify-between pb-2 border-b border-white/[0.05] mb-3">
-                    <p className="text-xs font-black uppercase font-mono tracking-wider text-[#9aa4bf]">Peringatan Anggaran</p>
+                    <p className="text-xs font-black uppercase font-mono tracking-wider text-[#9aa4bf]">Peringatan Keuangan</p>
                     <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded ${
-                      budgetWarnings.length > 0 ? 'bg-red-500/15 text-red-400' : 'bg-emerald-500/15 text-emerald-400'
+                      totalNotificationsCount > 0 ? 'bg-red-500/15 text-red-00' : 'bg-emerald-500/15 text-emerald-400'
                     }`}>
-                      {budgetWarnings.length} Kategori Melebihi Batas
+                      {totalNotificationsCount} Peringatan Kritis
                     </span>
                   </div>
 
-                  <div className="space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
-                    {budgetWarnings.length === 0 ? (
+                  <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
+                    {totalNotificationsCount === 0 ? (
                       <div className="text-center py-6">
                         <ShieldCheck className="h-8 w-8 text-emerald-400 mx-auto mb-2 animate-bounce" />
-                        <p className="text-xs font-bold text-slate-300">Semua Kategori Aman!</p>
-                        <p className="text-[10px] text-slate-450 mt-1 text-center">Pengeluaran bulanan belum ada yang melewati batas 90% anggaran.</p>
+                        <p className="text-xs font-bold text-slate-350">Semua Kategori Aman!</p>
+                        <p className="text-[10px] text-slate-400 mt-1 text-center font-sans">Belum ada anggaran melebihi batas atau tagihan mendekati jatuh tempo.</p>
                       </div>
                     ) : (
-                      budgetWarnings.map((warning, idx) => (
-                        <div 
-                          key={idx} 
-                          className="p-3 rounded-xl bg-red-500/[0.04] border border-red-500/10 hover:bg-red-500/[0.08] transition-colors"
-                        >
-                          <div className="flex items-start gap-2.5">
-                            <span className="text-base text-red-400 shrink-0">⚠️</span>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-bold text-white">Batas Anggaran {warning.category}</p>
-                              <p className="text-[10px] text-[#9aa4bf] mt-1 leading-relaxed">
-                                Pengeluaran untuk Kategori <span className="text-[#a994ff] font-bold">'{warning.category}'</span> telah mencapai <span className="font-mono text-[#ff5c7a] font-bold">{formatCurrency(warning.spent)}</span> dari batas <span className="font-mono text-[#00d4ff] font-bold">{formatCurrency(warning.budget)}</span> ({warning.percentage.toFixed(0)}%). Harap rem pengeluaran!
-                              </p>
-                              
-                              {/* Miniature progress bar */}
-                              <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-2 border border-white/5">
-                                <div 
-                                  className={`h-full rounded-full transition-all duration-500 ${
-                                    warning.percentage >= 100 ? 'bg-red-500 shadow-sm shadow-red-500/30' : 'bg-amber-500 shadow-sm shadow-amber-500/30'
-                                  }`}
-                                  style={{ width: `${Math.min(100, warning.percentage)}%` }}
-                                ></div>
+                      <>
+                        {/* Budget warning sub-section */}
+                        {budgetWarnings.length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-[9px] font-bold text-[#a5b4fc] uppercase font-mono tracking-wider">⚠️ Melebihi Batas Anggaran ({budgetWarnings.length})</p>
+                            {budgetWarnings.map((warning, idx) => (
+                              <div 
+                                key={`budget-desc-${idx}`} 
+                                className="p-3 rounded-xl bg-red-500/[0.03] border border-red-500/10 hover:bg-red-500/[0.06] transition-all"
+                              >
+                                <p className="text-xs font-bold text-white mb-1">Batas Anggaran {warning.category}</p>
+                                <p className="text-[10px] text-[#9aa4bf] leading-relaxed">
+                                  Pengeluaran Kategori <span className="text-[#a994ff] font-bold">'{warning.category}'</span> mencapai <span className="font-mono text-[#ff5c7a] font-bold">{formatCurrency(warning.spent)}</span> dari <span className="font-mono text-[#00d4ff] font-bold">{formatCurrency(warning.budget)}</span> ({warning.percentage.toFixed(0)}%). Harap rem pengeluaran!
+                                </p>
+                                <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden mt-2 relative">
+                                  <div 
+                                    className="h-full bg-red-500 rounded-full"
+                                    style={{ width: `${Math.min(100, warning.percentage)}%` }}
+                                  ></div>
+                                </div>
                               </div>
-                            </div>
+                            ))}
                           </div>
-                        </div>
-                      ))
+                        )}
+
+                        {/* Debt and receivables warnings sub-section */}
+                        {debtWarnings.length > 0 && (
+                          <div className="space-y-2 pt-2 border-t border-white/[0.04]">
+                            <p className="text-[9px] font-bold text-[#fbcfe8] uppercase font-mono tracking-wider">📅 Jatuh Tempo Hutang & Piutang ({debtWarnings.length})</p>
+                            {debtWarnings.map((warning, idx) => (
+                              <div 
+                                key={`debt-desc-${idx}`} 
+                                className={`p-3 rounded-xl border transition-all ${
+                                  warning.isOverdue 
+                                    ? 'bg-red-500/[0.03] border-red-500/15 hover:bg-red-500/[0.06]' 
+                                    : 'bg-amber-500/[0.02] border-amber-500/10 hover:bg-amber-500/[0.05]'
+                                }`}
+                              >
+                                <p className="text-[10px] leading-relaxed text-[#f1f5f9]">
+                                  {warning.message}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
 
-                  <div className="pt-3 border-t border-white/[0.05] mt-3 text-right">
+                  <div className="pt-3 border-t border-white/[0.05] mt-3 flex justify-between items-center text-[10px]">
+                    <button 
+                      onClick={() => {
+                        setShowNotificationDropdown(false);
+                        setActiveTab('debts');
+                      }}
+                      className="font-bold text-[#fbcfe8] hover:text-white transition-colors flex items-center gap-1 font-mono uppercase text-[9px]"
+                    >
+                      <HeartPulse className="h-3.5 w-3.5 text-[#ff5c7a]" />
+                      <span>Kelola Tagihan</span>
+                    </button>
+
                     <button 
                       onClick={() => {
                         setShowNotificationDropdown(false);
                         setActiveTab('settings');
                       }}
-                      className="text-[10px] font-bold text-[#7c5cff] hover:text-[#977eff] transition-colors flex items-center gap-1 ml-auto"
+                      className="font-bold text-[#7c5cff] hover:text-[#977eff] transition-colors flex items-center gap-1 font-mono uppercase text-[9px] ml-auto"
                     >
-                      <span>Atur Batas Anggaran</span>
+                      <span>Atur Anggaran</span>
                       <ChevronRight className="h-3 w-3" />
                     </button>
                   </div>

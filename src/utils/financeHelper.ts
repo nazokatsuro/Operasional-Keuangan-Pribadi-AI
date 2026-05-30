@@ -83,6 +83,8 @@ export const INCOME_CATEGORIES = [
   { name: 'Penjualan', color: '#ff5c7a', icon: 'ShoppingBag' },
   { name: 'Gift', color: '#f59e0b', icon: 'Award' },
   { name: 'Refund', color: '#10b981', icon: 'RotateCcw' },
+  { name: 'Pinjaman', color: '#ffd700', icon: 'Handshake' },
+  { name: 'Meminjam', color: '#ffd700', icon: 'Handshake' },
   { name: 'Lainnya Pemasukan', color: '#64748b', icon: 'CircleEllipsis' },
 ];
 
@@ -103,6 +105,7 @@ export const EXPENSE_CATEGORIES = [
   { name: 'Logistik', color: '#ff8c00', icon: 'Truck' },
   { name: 'Marketing', color: '#ff1493', icon: 'Megaphone' },
   { name: 'Pinjaman', color: '#ffd700', icon: 'Handshake' },
+  { name: 'Meminjam', color: '#ffd700', icon: 'Handshake' },
   { name: 'Lainnya', color: '#94a3b8', icon: 'CircleEllipsis' },
 ];
 

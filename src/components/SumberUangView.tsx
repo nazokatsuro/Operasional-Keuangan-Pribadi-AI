@@ -267,11 +267,14 @@ export function SumberUangView({
                 <div>
                   <label className="block text-[10px] font-bold text-white uppercase tracking-wider mb-1.5">Saldo Saat Ini (Rp)</label>
                   <input
-                    type="number"
+                    type="text"
                     required
-                    value={formBalance}
-                    onChange={(e) => setFormBalance(e.target.value)}
-                    placeholder="Contoh: 5000000"
+                    value={formBalance ? parseInt(formBalance, 10).toLocaleString('id-ID') : ''}
+                    onChange={(e) => {
+                      const rawVal = e.target.value.replace(/\D/g, '');
+                      setFormBalance(rawVal);
+                    }}
+                    placeholder="Contoh: 5.000.000"
                     className="w-full p-2.5 bg-[#060813] text-xs font-mono rounded-xl border border-white/[0.08] text-white focus:outline-none focus:border-[#7c5cff]/60 focus:ring-1 focus:ring-[#7c5cff]/60"
                   />
                 </div>

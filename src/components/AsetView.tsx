@@ -376,9 +376,16 @@ export function AsetView({
                       <div className="relative">
                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-mono text-[#9aa4bf]">Rp</span>
                         <input
-                          type="number"
-                          value={batchPrices[cat.key] !== undefined ? batchPrices[cat.key] : referencePrice}
-                          onChange={(e) => handleBatchPriceChange(cat.key, e.target.value)}
+                          type="text"
+                          value={
+                            (batchPrices[cat.key] !== undefined ? batchPrices[cat.key] : referencePrice.toString())
+                              ? parseInt(batchPrices[cat.key] !== undefined ? batchPrices[cat.key] : referencePrice.toString(), 10).toLocaleString('id-ID')
+                              : ''
+                          }
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/\D/g, '');
+                            handleBatchPriceChange(cat.key, raw);
+                          }}
                           className="w-24 pl-6 pr-2 py-1 bg-[#0c1020] text-xs text-white rounded-lg border border-white/10 font-mono text-right focus:outline-none focus:border-[#7c5cff]"
                           placeholder="Harga"
                         />
@@ -511,9 +518,12 @@ export function AsetView({
                     <div className="flex items-center gap-1 bg-white/[0.03] p-1 rounded-lg border border-white/10">
                       <span className="text-[10px] text-[#9aa4bf] font-mono">Rp</span>
                       <input
-                        type="number"
-                        value={cardPriceInput}
-                        onChange={(e) => setCardPriceInput(e.target.value)}
+                        type="text"
+                        value={cardPriceInput ? parseInt(cardPriceInput, 10).toLocaleString('id-ID') : ''}
+                        onChange={(e) => {
+                          const rawVal = e.target.value.replace(/\D/g, '');
+                          setCardPriceInput(rawVal);
+                        }}
                         onBlur={() => {
                           // Allow onMouseDown on button to register before clearing
                           setTimeout(() => {
@@ -645,10 +655,13 @@ export function AsetView({
                 <div className="space-y-1">
                   <label className="text-[10px] text-[#9aa4bf] uppercase font-bold tracking-wider font-mono block">Harga Beli Satuan (Rp)</label>
                   <input 
-                    type="number" 
-                    value={formBuyPrice}
-                    onChange={(e) => setFormBuyPrice(e.target.value)}
-                    placeholder="E.g., 1000000"
+                    type="text" 
+                    value={formBuyPrice ? parseInt(formBuyPrice, 10).toLocaleString('id-ID') : ''}
+                    onChange={(e) => {
+                      const rawVal = e.target.value.replace(/\D/g, '');
+                      setFormBuyPrice(rawVal);
+                    }}
+                    placeholder="E.g., 1.000.000"
                     required
                     className="w-full px-3 py-2 bg-white/[0.04] text-xs text-white rounded-xl border border-white/5 focus:outline-none focus:border-[#7c5cff] font-mono"
                   />
@@ -656,10 +669,13 @@ export function AsetView({
                 <div className="space-y-1">
                   <label className="text-[10px] text-[#9aa4bf] uppercase font-bold tracking-wider font-mono block">Harga Pasar Satuan (Rp)</label>
                   <input 
-                    type="number" 
-                    value={formMarketPrice}
-                    onChange={(e) => setFormMarketPrice(e.target.value)}
-                    placeholder="E.g., 1500000"
+                    type="text" 
+                    value={formMarketPrice ? parseInt(formMarketPrice, 10).toLocaleString('id-ID') : ''}
+                    onChange={(e) => {
+                      const rawVal = e.target.value.replace(/\D/g, '');
+                      setFormMarketPrice(rawVal);
+                    }}
+                    placeholder="E.g., 1.500.000"
                     required
                     className="w-full px-3 py-2 bg-white/[0.04] text-xs text-white rounded-xl border border-white/5 focus:outline-none focus:border-[#7c5cff] font-mono"
                   />
