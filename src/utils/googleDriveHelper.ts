@@ -19,6 +19,7 @@ export interface DraftPayload {
   assets: any[];
   debts: any[];
   userProfile: any;
+  categoryBudgets?: Record<string, number>;
 }
 
 /**
@@ -62,12 +63,14 @@ export const logoutGDrive = async () => {
 };
 
 /**
- * Searches for 'laporan_jersey_draft.json' inside Google Drive.
+ * Searches for 'pembukuan_pribadi_(email).json' inside Google Drive.
  * Returns the file ID if it exists and is not trashed, otherwise null.
  */
 export const searchDraftFile = async (accessToken: string): Promise<string | null> => {
   try {
-    const q = encodeURIComponent("name = 'laporan_jersey_draft.json' and trashed = false");
+    const email = auth.currentUser?.email || 'pribadi';
+    const fileName = `pembukuan_pribadi_${email}.json`;
+    const q = encodeURIComponent(`name = '${fileName}' and trashed = false`);
     const url = `https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name)`;
     
     const response = await fetch(url, {
@@ -93,7 +96,7 @@ export const searchDraftFile = async (accessToken: string): Promise<string | nul
 };
 
 /**
- * Downloads and parses 'laporan_jersey_draft.json' content from Google Drive by file ID.
+ * Downloads and parses 'pembukuan_pribadi_(email).json' content from Google Drive by file ID.
  */
 export const downloadDraftFile = async (accessToken: string, fileId: string): Promise<DraftPayload | null> => {
   try {
@@ -118,11 +121,13 @@ export const downloadDraftFile = async (accessToken: string, fileId: string): Pr
 };
 
 /**
- * Saves (creates or updates) 'laporan_jersey_draft.json' draft to Google Drive.
+ * Saves (creates or updates) 'pembukuan_pribadi_(email).json' draft to Google Drive.
  */
 export const saveDraftFile = async (accessToken: string, payload: DraftPayload): Promise<boolean> => {
   try {
     const fileId = await searchDraftFile(accessToken);
+    const email = auth.currentUser?.email || 'pribadi';
+    const fileName = `pembukuan_pribadi_${email}.json`;
 
     if (fileId) {
       // 1. Update existing file content (PATCH uploadType=media)
@@ -151,7 +156,7 @@ export const saveDraftFile = async (accessToken: string, payload: DraftPayload):
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          name: 'laporan_jersey_draft.json',
+          name: fileName,
           mimeType: 'application/json'
         })
       });

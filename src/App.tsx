@@ -26,7 +26,7 @@ import { AiInputView } from './components/AiInputView';
 import { 
   Transaction, Account, Asset, Debt,
   DEFAULT_TRANSACTIONS, DEFAULT_ACCOUNTS, DEFAULT_ASSETS, DEFAULT_DEBTS,
-  formatCurrency, getFriendlyGreeting 
+  formatCurrency, getFriendlyGreeting, EXPENSE_CATEGORIES
 } from './utils/financeHelper';
 import { ParsedTransaction, parseFinanceText } from './utils/aiParser';
 
@@ -37,7 +37,8 @@ import {
   downloadDraftFile, 
   saveDraftFile, 
   getGDriveAccessToken,
-  DraftPayload
+  DraftPayload,
+  auth
 } from './utils/googleDriveHelper';
 
 export default function App() {
@@ -140,6 +141,35 @@ interface UserProfile {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
 
+  // Category Bulanan Budget Threshold State
+  const [categoryBudgets, setCategoryBudgets] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('LKP_CATEGORY_BUDGETS');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {
+      console.error('Error loading LKP_CATEGORY_BUDGETS', e);
+    }
+    // Default categories with budgets
+    return {
+      'Makan': 3000000,
+      'Transport': 1500000,
+      'Belanja': 2000000,
+      'Internet': 500000,
+      'Listrik': 1000000,
+      'Langganan': 300000,
+      'Hiburan': 1000000,
+      'Kesehatan': 1000000,
+      'Lainnya': 1000000,
+      'Operasional Workshop': 5000000,
+      'Vendor Tambahan': 3000000,
+    };
+  });
+
+  const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
+
   // Toast premium alerts notification
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info' } | null>(null);
 
@@ -182,12 +212,13 @@ interface UserProfile {
     setShowSyncIndicator(true);
 
     try {
+      const email = auth.currentUser?.email || 'pribadi';
       const fileId = await searchDraftFile(token);
       if (fileId) {
         // Formulated exact message pattern specified in standard prompt instruction rules
         setSyncIndicatorType('warning');
         setSyncStatusMsg(
-          `Ditemukan Backup Cloud!\nGoogle Drive draft sinkronisasi terdeteksi.\nAda berkas cadangan laporan_jersey_draft.json di Google Drive Anda\n\n⚠️ PERHATIAN: Memulihkan draft ini akan menumpuk (menghapus permanen) seluruh data lokal yang anda ada saat ini.`
+          `Ditemukan Backup Cloud!\nGoogle Drive draft sinkronisasi terdeteksi.\nAda berkas cadangan pembukuan_pribadi_${email}.json di Google Drive Anda\n\n⚠️ PERHATIAN: Memulihkan draft ini akan menumpuk (menghapus permanen) seluruh data lokal yang anda ada saat ini.`
         );
 
         // Visual Countdown satisfying countdown trigger requirement: "otomatis pilih muat daftar sambil menunggu muat daftar tambahkan fitur loading yang modern"
@@ -206,6 +237,7 @@ interface UserProfile {
           if (draft.assets) setAssets(draft.assets);
           if (draft.debts) setDebts(draft.debts);
           if (draft.userProfile) setUserProfile(draft.userProfile);
+          if (draft.categoryBudgets) setCategoryBudgets(draft.categoryBudgets);
 
           // Force instant save locally too to avoid stale states
           if (draft.transactions) localStorage.setItem('LKP_TRANSACTIONS', JSON.stringify(draft.transactions));
@@ -213,13 +245,14 @@ interface UserProfile {
           if (draft.assets) localStorage.setItem('LKP_ASSETS', JSON.stringify(draft.assets));
           if (draft.debts) localStorage.setItem('LKP_DEBTS', JSON.stringify(draft.debts));
           if (draft.userProfile) localStorage.setItem('LKP_USER_PROFILE', JSON.stringify(draft.userProfile));
+          if (draft.categoryBudgets) localStorage.setItem('LKP_CATEGORY_BUDGETS', JSON.stringify(draft.categoryBudgets));
 
           showToast('Cadangan Cloud berhasil dipulihkan secara otomatis!', 'success');
         } else {
           showToast('Gagal memulihkan draf dari Google Drive.', 'error');
         }
       } else {
-        showToast('Tidak ada draft draf laporan_jersey_draft.json sebelumnya. Memulai lembar baru!', 'info');
+        showToast(`Tidak ada draft draf pembukuan_pribadi_${email}.json sebelumnya. Memulai lembar baru!`, 'info');
       }
     } catch (err) {
       console.error(err);
@@ -272,7 +305,8 @@ interface UserProfile {
         accounts,
         assets,
         debts,
-        userProfile
+        userProfile,
+        categoryBudgets
       };
       const ok = await saveDraftFile(gdriveToken, payload);
       if (ok) {
@@ -298,7 +332,8 @@ interface UserProfile {
         accounts,
         assets,
         debts,
-        userProfile
+        userProfile,
+        categoryBudgets
       };
       const ok = await saveDraftFile(gdriveToken, payload);
       if (ok) {
@@ -307,7 +342,7 @@ interface UserProfile {
     }, 5000); // Debounce to prevent hitting rapid rate limits during fast inputs
 
     return () => clearTimeout(autoSaveTimer);
-  }, [transactions, accounts, assets, debts, userProfile, gdriveToken]);
+  }, [transactions, accounts, assets, debts, userProfile, categoryBudgets, gdriveToken]);
 
   // 2. AUTO-SAVE DEBOUNCE SYSTEM TO LOCALSTORAGE ON MUTATION
   useEffect(() => {
@@ -329,6 +364,10 @@ interface UserProfile {
   useEffect(() => {
     localStorage.setItem('LKP_USER_PROFILE', JSON.stringify(userProfile));
   }, [userProfile]);
+
+  useEffect(() => {
+    localStorage.setItem('LKP_CATEGORY_BUDGETS', JSON.stringify(categoryBudgets));
+  }, [categoryBudgets]);
 
   // 1.8 SELF-HEALING SYSTEM: Always keep account balances perfectly computed from transactions list in real-time
   useEffect(() => {
@@ -1013,11 +1052,12 @@ interface UserProfile {
 
   // Safe file imports / exports matching specifications
   const handleExportJSON = () => {
-    const bundleStr = JSON.stringify({ transactions, accounts, assets, debts, userProfile });
+    const bundleStr = JSON.stringify({ transactions, accounts, assets, debts, userProfile, categoryBudgets });
     const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(bundleStr);
+    const email = auth.currentUser?.email || userProfile.email || 'pribadi';
     const link = document.createElement('a');
     link.href = dataUri;
-    link.download = 'LKP-Backup-Database.json';
+    link.download = `pembukuan_pribadi_${email}.json`;
     link.click();
     showToast('Backup JSON sukses terunduh', 'success');
   };
@@ -1035,6 +1075,7 @@ interface UserProfile {
         if (parsed.assets) setAssets(parsed.assets);
         if (parsed.debts) setDebts(parsed.debts);
         if (parsed.userProfile) setUserProfile(parsed.userProfile);
+        if (parsed.categoryBudgets) setCategoryBudgets(parsed.categoryBudgets);
         
         showToast('Database berhasil dipulihkan dari Backup JSON!', 'success');
       } catch (err) {
@@ -1046,6 +1087,54 @@ interface UserProfile {
 
   // Layout calculations
   const totalInflowSum = accounts.reduce((sum, a) => sum + a.balance, 0);
+
+  // Real-time monthly category spent calculation & budget warnings list matching requirements
+  const spentMap = React.useMemo(() => {
+    // Current date workspace is set in May 2026 as per local workspace time metadata
+    const now = new Date();
+    const yStr = now.getFullYear().toString();
+    const mStr = String(now.getMonth() + 1).padStart(2, '0');
+
+    const map: Record<string, number> = {};
+    transactions.forEach(tx => {
+      if (tx.type === 'Pengeluaran' && tx.date) {
+        const parts = tx.date.split('-'); // "2026-05-12"
+        if (parts[0] === yStr && parts[1] === mStr) {
+          const cat = tx.category || 'Lainnya';
+          map[cat] = (map[cat] || 0) + tx.nominal;
+        }
+      }
+    });
+    return map;
+  }, [transactions]);
+
+  const budgetWarnings = React.useMemo(() => {
+    const warnings: Array<{
+      category: string;
+      spent: number;
+      budget: number;
+      percentage: number;
+      message: string;
+    }> = [];
+
+    Object.entries(categoryBudgets).forEach(([category, budget]) => {
+      const spent = spentMap[category] || 0;
+      if (budget > 0) {
+        const percentage = (spent / budget) * 100;
+        if (percentage >= 90) {
+          warnings.push({
+            category,
+            spent,
+            budget,
+            percentage,
+            message: `⚠️ Peringatan: Pengeluaran untuk Kategori '${category}' telah mencapai Rp ${spent.toLocaleString()} dari batas Rp ${budget.toLocaleString()} (${percentage.toFixed(0)}%). Harap rem pengeluaran!`
+          });
+        }
+      }
+    });
+
+    return warnings;
+  }, [spentMap, categoryBudgets]);
 
   // Active Menu List Items
   const menuItems = [
@@ -1168,6 +1257,67 @@ interface UserProfile {
                 {isLight ? <Moon className="h-4 w-4 text-indigo-400" /> : <Sun className="h-4 w-4 text-amber-400" />}
               </button>
 
+              {/* Mobile notification bell dropdown trigger */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowNotificationDropdown(!showNotificationDropdown)}
+                  className={`p-1.5 rounded-lg transition-all border cursor-pointer relative ${
+                    showNotificationDropdown
+                      ? 'bg-[#7c5cff]/20 text-white border-[#7c5cff]/30'
+                      : 'text-slate-400 hover:text-white bg-white/[0.02] border-white/5'
+                  }`}
+                  title="Notifikasi"
+                >
+                  <Bell className={`h-4 w-4 ${budgetWarnings.length > 0 ? 'text-red-450' : ''}`} />
+                  {budgetWarnings.length > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center">
+                      <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-red-650 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600 text-[8px] font-bold text-white items-center justify-center font-mono">
+                        {budgetWarnings.length}
+                      </span>
+                    </span>
+                  )}
+                </button>
+
+                {showNotificationDropdown && (
+                  <div className={`absolute right-[-60px] mt-2 w-64 rounded-xl border shadow-xl p-3 z-50 text-left animate-slide-in ${
+                    isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-[#0f1424] border-white/[0.08] text-white'
+                  }`}>
+                    <div className="flex items-center justify-between pb-1.5 border-b border-white/[0.05] mb-2">
+                      <p className="text-[10px] font-black uppercase font-mono tracking-wider text-[#9aa4bf]">Anggaran Melebihi Batas</p>
+                      <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-00">
+                        {budgetWarnings.length} Batas
+                      </span>
+                    </div>
+                    <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
+                      {budgetWarnings.length === 0 ? (
+                        <p className="text-[10px] text-[#9aa4bf] text-center py-2">Semua pengeluaran aman!</p>
+                      ) : (
+                        budgetWarnings.map((w, idx) => (
+                          <div key={idx} className="p-1.5 rounded bg-red-500/[0.03] border border-[#ff5c7a]/10 text-[10px]">
+                            <p className="font-bold text-white mb-0.5">{w.category}</p>
+                            <p className="text-[#9aa4bf] text-[9px] leading-tight">
+                              Terpakai <span className="text-[#ff5c7a] font-bold">{formatCurrency(w.spent)}</span> dari <span className="text-white font-bold">{formatCurrency(w.budget)}</span> ({w.percentage.toFixed(0)}%)
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <div className="pt-1.5 border-t border-white/[0.05] mt-1.5 text-right">
+                      <button
+                        onClick={() => {
+                          setShowNotificationDropdown(false);
+                          setActiveTab('settings');
+                        }}
+                        className="text-[9px] font-bold text-[#7c5cff]"
+                      >
+                        Atur Batas Anggaran
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={() => setActiveTab('settings')}
                 className={`p-1.5 rounded-lg transition-colors border cursor-pointer ${
@@ -1245,6 +1395,99 @@ interface UserProfile {
             >
               {isLight ? <Moon className="h-4.5 w-4.5 text-indigo-400" /> : <Sun className="h-4.5 w-4.5 text-amber-400" />}
             </button>
+
+            {/* NOTIFICATION BELL WITH RED PULSING BADGE */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotificationDropdown(!showNotificationDropdown)}
+                className={`p-2 rounded-xl transition-all border cursor-pointer relative ${
+                  showNotificationDropdown
+                    ? 'bg-[#7c5cff]/20 text-white border-[#7c5cff]/30 shadow-md shadow-violet-500/10'
+                    : 'text-slate-400 hover:text-white bg-white/[0.02] border-white/5 hover:border-white/10'
+                }`}
+                title="Notifikasi Anggaran"
+              >
+                <Bell className={`h-4.5 w-4.5 ${budgetWarnings.length > 0 ? 'text-red-400 font-bold' : ''}`} />
+                
+                {/* 2. Pulsing Notification Badge */}
+                {budgetWarnings.length > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4.5 w-4.5 items-center justify-center">
+                    <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-red-600 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-600 text-[9px] font-bold text-white items-center justify-center font-mono">
+                      {budgetWarnings.length}
+                    </span>
+                  </span>
+                )}
+              </button>
+
+              {/* 3. Konten Dropdown Notifikasi */}
+              {showNotificationDropdown && (
+                <div className={`absolute right-0 mt-2.5 w-80 sm:w-96 rounded-2xl border shadow-2xl p-4 z-50 text-left animate-slide-in ${
+                  isLight 
+                    ? 'bg-white border-slate-200 text-slate-800' 
+                    : 'bg-[#0f1424] border-white/[0.08] text-white'
+                }`}>
+                  <div className="flex items-center justify-between pb-2 border-b border-white/[0.05] mb-3">
+                    <p className="text-xs font-black uppercase font-mono tracking-wider text-[#9aa4bf]">Peringatan Anggaran</p>
+                    <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded ${
+                      budgetWarnings.length > 0 ? 'bg-red-500/15 text-red-400' : 'bg-emerald-500/15 text-emerald-400'
+                    }`}>
+                      {budgetWarnings.length} Kategori Melebihi Batas
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
+                    {budgetWarnings.length === 0 ? (
+                      <div className="text-center py-6">
+                        <ShieldCheck className="h-8 w-8 text-emerald-400 mx-auto mb-2 animate-bounce" />
+                        <p className="text-xs font-bold text-slate-300">Semua Kategori Aman!</p>
+                        <p className="text-[10px] text-slate-450 mt-1 text-center">Pengeluaran bulanan belum ada yang melewati batas 90% anggaran.</p>
+                      </div>
+                    ) : (
+                      budgetWarnings.map((warning, idx) => (
+                        <div 
+                          key={idx} 
+                          className="p-3 rounded-xl bg-red-500/[0.04] border border-red-500/10 hover:bg-red-500/[0.08] transition-colors"
+                        >
+                          <div className="flex items-start gap-2.5">
+                            <span className="text-base text-red-400 shrink-0">⚠️</span>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-white">Batas Anggaran {warning.category}</p>
+                              <p className="text-[10px] text-[#9aa4bf] mt-1 leading-relaxed">
+                                Pengeluaran untuk Kategori <span className="text-[#a994ff] font-bold">'{warning.category}'</span> telah mencapai <span className="font-mono text-[#ff5c7a] font-bold">{formatCurrency(warning.spent)}</span> dari batas <span className="font-mono text-[#00d4ff] font-bold">{formatCurrency(warning.budget)}</span> ({warning.percentage.toFixed(0)}%). Harap rem pengeluaran!
+                              </p>
+                              
+                              {/* Miniature progress bar */}
+                              <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-2 border border-white/5">
+                                <div 
+                                  className={`h-full rounded-full transition-all duration-500 ${
+                                    warning.percentage >= 100 ? 'bg-red-500 shadow-sm shadow-red-500/30' : 'bg-amber-500 shadow-sm shadow-amber-500/30'
+                                  }`}
+                                  style={{ width: `${Math.min(100, warning.percentage)}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-white/[0.05] mt-3 text-right">
+                    <button 
+                      onClick={() => {
+                        setShowNotificationDropdown(false);
+                        setActiveTab('settings');
+                      }}
+                      className="text-[10px] font-bold text-[#7c5cff] hover:text-[#977eff] transition-colors flex items-center gap-1 ml-auto"
+                    >
+                      <span>Atur Batas Anggaran</span>
+                      <ChevronRight className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Quick settings button */}
             <button
@@ -1467,6 +1710,201 @@ interface UserProfile {
                     </div>
                   </div>
 
+                  {/* CATEGORY BUDGETS CONFIGURATION SECTION */}
+                  <div className="pt-6 border-t border-white/[0.05] space-y-4">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-[#ff5c7a]/10 text-[#ff5c7a]">
+                        <Target className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">Batas Anggaran Pengeluaran Bulanan (Budget Cap)</h3>
+                        <p className="text-[10px] text-[#9aa4bf]">Tentukan batas maksimal anggaran bulanan per kategori pengeluaran untuk mengaktifkan sistem peringatan over-budget real-time.</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Left: Interactive list of current active thresholds with sliders */}
+                      <div className="p-4 rounded-2xl bg-[#080d1a] border border-white/[0.05] space-y-3">
+                        <p className="text-[#a5b4fc] text-[10px] font-bold font-mono tracking-wider text-left border-b border-white/5 pb-1.5">Kategori & Batas Setelan Saat Ini</p>
+                        
+                        <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
+                          {Object.entries(categoryBudgets).length === 0 ? (
+                            <p className="text-xs text-[#9aa4bf] text-center py-4">Belum ada batas anggaran yang diatur.</p>
+                          ) : (
+                            Object.entries(categoryBudgets).map(([catName, capAmount]) => {
+                              const spent = spentMap[catName] || 0;
+                              const percentage = capAmount > 0 ? (spent / capAmount) * 100 : 0;
+                              
+                              return (
+                                <div key={catName} className="p-3 rounded-xl bg-[#0c1224] border border-white/[0.04] flex flex-col gap-2">
+                                  <div className="flex items-center justify-between">
+                                    <div className="text-left font-bold text-xs text-white">
+                                      {catName}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = { ...categoryBudgets };
+                                        delete updated[catName];
+                                        setCategoryBudgets(updated);
+                                        showToast(`Batas anggaran kategori '${catName}' berhasil dihapus.`, 'info');
+                                      }}
+                                      className="p-1 text-[#ff5c7a] hover:bg-white/5 rounded-md transition-colors"
+                                      title="Reset Batas"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </div>
+
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex-1 text-left min-w-0">
+                                      {/* Realtime progress */}
+                                      <div className="flex justify-between text-[10px] text-[#9aa4bf]">
+                                        <span>Terpakai: <strong className={percentage >= 90 ? 'text-red-400 font-mono' : 'text-[#16c784] font-mono'}>{formatCurrency(spent)}</strong></span>
+                                        <span>Batas: <strong className="text-white font-mono">{formatCurrency(capAmount)}</strong></span>
+                                      </div>
+                                      
+                                      <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-1.5 relative border border-white/5">
+                                        <div 
+                                          className={`h-full rounded-full transition-all duration-300 ${
+                                            percentage >= 100 ? 'bg-red-500' : percentage >= 90 ? 'bg-amber-500 animate-pulse' : 'bg-[#7c5cff]'
+                                          }`}
+                                          style={{ width: `${Math.min(100, percentage)}%` }}
+                                        ></div>
+                                      </div>
+                                    </div>
+
+                                    {/* Direct inline input for fast tuning */}
+                                    <div className="w-28 shrink-0">
+                                      <div className="relative">
+                                        <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-[#9aa4bf] font-mono">Rp</span>
+                                        <input
+                                          type="text"
+                                          value={capAmount === 0 ? '' : capAmount.toLocaleString('id-ID')}
+                                          onChange={(e) => {
+                                            const rawVal = e.target.value.replace(/\D/g, '');
+                                            const numVal = rawVal ? parseInt(rawVal) : 0;
+                                            setCategoryBudgets(prev => ({
+                                              ...prev,
+                                              [catName]: numVal
+                                            }));
+                                          }}
+                                          className="w-full pl-6 pr-1.5 py-1 text-[11px] font-mono bg-[#060a14] font-bold text-right text-[#00d4ff] rounded-lg border border-white/10 focus:outline-none focus:border-[#7c5cff]"
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right: Quick threshold control & addNew interface card container */}
+                      <div className="p-4 rounded-2xl bg-[#080d1a] border border-white/[0.05] flex flex-col justify-between">
+                        <div className="space-y-4">
+                          <p className="text-[#a5b4fc] text-[10px] font-bold font-mono tracking-wider text-left border-b border-white/5 pb-1.5">Atur Anggaran Kategori Baru / Perbarui</p>
+                          
+                          <div className="space-y-3">
+                            <div className="space-y-1.5 text-left">
+                              <label className="text-[10px] text-[#9aa4bf] uppercase font-bold tracking-wider font-mono">Pilih Kategori / Rekomendasi</label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <select
+                                  id="budget-category-selector"
+                                  className="px-3 py-1.5 bg-[#0c1020] text-xs text-white rounded-xl border border-white/10 focus:outline-none"
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    const nameInput = document.getElementById('budget-category-custom-input') as HTMLInputElement;
+                                    if (val && nameInput) {
+                                      nameInput.value = val;
+                                      const event = new Event('input', { bubbles: true });
+                                      nameInput.dispatchEvent(event);
+                                    }
+                                  }}
+                                  defaultValue=""
+                                >
+                                  <option value="">-- Presets --</option>
+                                  {EXPENSE_CATEGORIES.map(c => (
+                                    <option key={c.name} value={c.name}>{c.name}</option>
+                                  ))}
+                                  <option value="Operasional Workshop">Operasional Workshop</option>
+                                  <option value="Vendor Tambahan">Vendor Tambahan</option>
+                                </select>
+
+                                <input
+                                  id="budget-category-custom-input"
+                                  placeholder="Nama Kategori..."
+                                  type="text"
+                                  className="px-3 py-1.5 bg-[#0c1020] text-xs text-white rounded-xl border border-white/10 focus:outline-none focus:border-[#7c5cff]"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-1.5 text-left">
+                              <label className="text-[10px] text-[#9aa4bf] uppercase font-bold tracking-wider font-mono">Batas Nilai Anggaran Bulanan (Rp)</label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[#9aa4bf] font-semibold">Rp</span>
+                                <input
+                                  id="budget-amount-input"
+                                  placeholder="Contoh: 5.000.000"
+                                  type="text"
+                                  onChange={(e) => {
+                                    const rawVal = e.target.value.replace(/\D/g, '');
+                                    const numVal = rawVal ? parseInt(rawVal) : 0;
+                                    e.target.value = numVal > 0 ? numVal.toLocaleString('id-ID') : '';
+                                  }}
+                                  className="w-full pl-10 pr-3 py-1.5 bg-[#0c1020] text-xs text-white font-mono rounded-xl border border-white/10 focus:outline-none focus:border-[#7c5cff]"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-white/[0.04] mt-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nameInput = document.getElementById('budget-category-custom-input') as HTMLInputElement;
+                              const amtInput = document.getElementById('budget-amount-input') as HTMLInputElement;
+                              
+                              if (!nameInput || !nameInput.value.trim()) {
+                                showToast('Harap tentukan nama kategori terlebih dahulu!', 'error');
+                                return;
+                              }
+                              
+                              const amtVal = amtInput ? amtInput.value.replace(/\D/g, '') : '';
+                              if (!amtVal || parseInt(amtVal) <= 0) {
+                                showToast('Harap cantumkan nominal batas anggaran yang valid!', 'error');
+                                return;
+                              }
+                              
+                              const targetCatName = nameInput.value.trim();
+                              const targetAmt = parseInt(amtVal);
+                              
+                              setCategoryBudgets(prev => ({
+                                ...prev,
+                                [targetCatName]: targetAmt
+                              }));
+                              
+                              showToast(`Berhasil menyimpan batas anggaran ${targetCatName} sebesar ${formatCurrency(targetAmt)}`, 'success');
+                              
+                              // Clear forms
+                              nameInput.value = '';
+                              const sel = document.getElementById('budget-category-selector') as HTMLSelectElement;
+                              if (sel) sel.value = '';
+                              if (amtInput) amtInput.value = '';
+                            }}
+                            className="w-full py-2 bg-[#7c5cff] hover:bg-[#6847ff] text-white text-xs font-bold rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            <span>Terapkan Batas Anggaran</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Backup / Restore Database files */}
                   <div className="pt-4 border-t border-white/[0.05] space-y-2">
                     <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Akses Backup Ekspor database</h3>
@@ -1501,7 +1939,7 @@ interface UserProfile {
                       </div>
                       <div>
                         <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Penyimpanan Awan & Google Drive</h3>
-                        <p className="text-[10px] text-[#9aa4bf]">Sinkronisasi draf otomatis yang aman di Google Drive Anda (`laporan_jersey_draft.json`)</p>
+                        <p className="text-[10px] text-[#9aa4bf]">Sinkronisasi draf otomatis yang aman di Google Drive Anda: <code className="text-[#cabafe] font-mono">pembukuan_pribadi_{gdriveUser?.email || '(email)'}.json</code></p>
                       </div>
                     </div>
 
@@ -1716,7 +2154,7 @@ interface UserProfile {
                     <div className="text-left bg-white/[0.01] border border-white/[0.06] p-4 rounded-2xl relative">
                       <p className="text-xs font-bold text-white text-center">Google Drive draft sinkronisasi terdeteksi.</p>
                       <p className="text-xs text-[#9aa4bf] mt-2 leading-relaxed text-center">
-                        Ada berkas cadangan <code className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-[#00d4ff]">laporan_jersey_draft.json</code> di Google Drive Anda
+                        Ada berkas cadangan <code className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-[#00d4ff]">pembukuan_pribadi_{auth.currentUser?.email || 'pribadi'}.json</code> di Google Drive Anda
                       </p>
                       <p className="text-xs text-[#ff5c7a] font-bold mt-3 text-center border-t border-white/[0.05] pt-2.5">
                         ⚠️ PERHATIAN: Memulihkan draft ini akan menumpuk (menghapus permanen) seluruh data lokal yang anda ada saat ini.
