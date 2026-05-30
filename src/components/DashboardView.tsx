@@ -20,6 +20,8 @@ import {
 } from '../utils/financeHelper';
 import { parseFinanceText, ParsedTransaction, preprocessInputToLines } from '../utils/aiParser';
 
+import { EmergencyFundConfig } from './EmergencyFundPlannerView';
+
 interface DashboardViewProps {
   transactions: Transaction[];
   accounts: Account[];
@@ -28,6 +30,7 @@ interface DashboardViewProps {
   userProfile: { name: string; baseCurrency: string; accentColor: string; avatarUrl?: string; email?: string };
   onNavigate: (tab: string) => void;
   onCommitAI: (tx: ParsedTransaction) => void;
+  emergencyConfig: EmergencyFundConfig;
 }
 
 export function DashboardView({
@@ -37,7 +40,8 @@ export function DashboardView({
   debts,
   userProfile,
   onNavigate,
-  onCommitAI
+  onCommitAI,
+  emergencyConfig
 }: DashboardViewProps) {
   const chartRef = useRef<HTMLCanvasElement | null>(null);
   
@@ -53,6 +57,46 @@ export function DashboardView({
   };
   const dashboardRef = useRef<HTMLDivElement | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+
+  // Emergency calculations block inside dashboard widget
+  const widgetPeriodMonths = emergencyConfig.periodMonths || 3;
+  const getWidgetStartDateThreshold = (months: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (months * 30));
+    return d.toISOString().split('T')[0];
+  };
+  const widgetStartDateThreshold = getWidgetStartDateThreshold(widgetPeriodMonths);
+  const widgetPeriodExpenses = transactions.filter(t => 
+    t.type === 'Pengeluaran' && 
+    t.date >= widgetStartDateThreshold &&
+    t.category !== 'Top Up' &&
+    t.category !== 'Investasi'
+  );
+  const widgetTotalExpenseOnPeriod = widgetPeriodExpenses.reduce((sum, t) => sum + t.nominal, 0);
+  const widgetCalculatedAverageExpense = Math.round(widgetTotalExpenseOnPeriod / widgetPeriodMonths);
+  const widgetAverageMonthlyExpense = widgetCalculatedAverageExpense > 0 ? widgetCalculatedAverageExpense : 5000000;
+
+  const widgetTargetMultiplier = emergencyConfig.statusKey === 'custom'
+    ? (emergencyConfig.customMonths || 3)
+    : (emergencyConfig.statusKey === 'menikah_anak' ? 12 : emergencyConfig.statusKey === 'menikah' ? 6 : 3);
+
+  const widgetTargetAmount = widgetAverageMonthlyExpense * widgetTargetMultiplier;
+
+  const widgetSelectedAccounts = accounts.filter(acc => 
+    emergencyConfig.selectedSources.includes(`acc-${acc.id}`)
+  );
+  const widgetSelectedAccountsValue = widgetSelectedAccounts.reduce((sum, acc) => sum + acc.balance, 0);
+
+  const widgetSelectedAssets = assets.filter(as => 
+    emergencyConfig.selectedSources.includes(`asset-${as.id}`)
+  );
+  const widgetSelectedAssetsValue = widgetSelectedAssets.reduce((sum, as) => sum + (as.units * as.marketPrice), 0);
+
+  const widgetTabunganKhususValue = (emergencyConfig.contributions || []).reduce((sum: number, c: any) => sum + c.amount, 0);
+
+  const widgetTotalAvailable = widgetSelectedAccountsValue + widgetSelectedAssetsValue + widgetTabunganKhususValue;
+  const widgetProgressPercent = widgetTargetAmount > 0 ? Math.min(100, Math.round((widgetTotalAvailable / widgetTargetAmount) * 100)) : 0;
+  const widgetRemainingNeeded = Math.max(0, widgetTargetAmount - widgetTotalAvailable);
 
   // AI Assistant Panel Inline States
   const [aiText, setAiText] = useState('');
@@ -938,23 +982,35 @@ export function DashboardView({
             </div>
 
             {/* List of accounts styled into pills */}
-            <div className="grid grid-cols-2 gap-1.5 mt-3 pt-3 border-t border-white/[0.04]">
-              {accounts.slice(0, 4).map((acc, index) => {
-                const dotColors = ['bg-[#00ffa3]', 'bg-[#ffb547]', 'bg-[#00d4ff]', 'bg-[#7c5cff]'];
-                const dotColor = dotColors[index % dotColors.length];
-                const formattedPillBal = formatIDRWithSpace(acc.balance);
-                const extraCount = accounts.length - 4;
-                return (
-                  <div key={acc.id} className="flex items-center gap-1 bg-white/[0.02] border border-white/[0.04] px-2 py-1 rounded-lg text-[10px] text-[#9aa4bf] min-w-0">
-                    <span className={`w-1 h-1 rounded-full ${dotColor} shrink-0`} />
-                    <span className="truncate max-w-[65px] whitespace-nowrap font-medium text-white/85">{acc.name}</span>
-                    <span className="font-mono text-white/80 font-bold ml-auto text-[9px]">{formattedPillBal}</span>
-                    {index === 3 && extraCount > 0 && (
-                      <span className="text-[#16c784] font-black shrink-0 text-[8.5px] ml-0.5">+{extraCount}</span>
-                    )}
-                  </div>
-                );
-              })}
+            <div 
+              onClick={() => onNavigate('accounts')}
+              className="mt-3 pt-3 border-t border-white/[0.04] cursor-pointer hover:opacity-90 active:scale-[0.98] transition-all group/pills"
+              title="Klik untuk ke Sumber Uang"
+            >
+              {accounts.length === 0 ? (
+                <div className="flex items-center justify-center py-2.5 text-center text-xs font-bold font-mono text-[#ffb547] bg-[#ffb547]/5 border border-[#ffb547]/20 rounded-xl hover:bg-[#ffb547]/10 transition-colors">
+                  Tambah Saldomu Segera
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {accounts.slice(0, 4).map((acc, index) => {
+                    const dotColors = ['bg-[#00ffa3]', 'bg-[#ffb547]', 'bg-[#00d4ff]', 'bg-[#7c5cff]'];
+                    const dotColor = dotColors[index % dotColors.length];
+                    const formattedPillBal = formatIDRWithSpace(acc.balance);
+                    const extraCount = accounts.length - 4;
+                    return (
+                      <div key={acc.id} className="flex items-center gap-1 bg-white/[0.02] border border-white/[0.04] px-2 py-1 rounded-lg text-[10px] text-[#9aa4bf] min-w-0 group-hover/pills:bg-white/[0.05] transition-colors">
+                        <span className={`w-1 h-1 rounded-full ${dotColor} shrink-0`} />
+                        <span className="truncate max-w-[65px] whitespace-nowrap font-medium text-white/85">{acc.name}</span>
+                        <span className="font-mono text-white/80 font-bold ml-auto text-[9px]">{formattedPillBal}</span>
+                        {index === 3 && extraCount > 0 && (
+                          <span className="text-[#16c784] font-black shrink-0 text-[8.5px] ml-0.5">+{extraCount}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1073,6 +1129,63 @@ export function DashboardView({
             <p className={`text-xl sm:text-2xl font-black mt-1 ${netNetBalance >= 0 ? 'text-[#16c784]' : 'text-[#ff5c7a]'}`}>
               {netNetBalance >= 0 ? '+' : ''}{formatIDRWithSpace(netNetBalance)}
             </p>
+          </div>
+        </div>
+
+        {/* HIGH-IMPACT DANA DARURAT WIDGET */}
+        <div 
+          onClick={() => onNavigate('emergency_fund')}
+          className="bg-gradient-to-r from-[#0c1020]/90 via-[#10152a]/95 to-[#0c1020]/90 border border-[#7c5cff]/20 p-5 rounded-[22px] flex flex-col md:flex-row justify-between items-start md:items-center gap-4 cursor-pointer hover:border-[#7c5cff]/50 hover:shadow-lg transition-all active:scale-[0.99] text-left group relative overflow-hidden"
+        >
+          {/* Subtle Watermark Shield Icon */}
+          <ShieldCheck className="w-24 h-24 text-white/[0.015] absolute -bottom-4 -right-4 pointer-events-none group-hover:scale-110 transition-transform duration-500" />
+
+          <div className="flex-1 space-y-2 text-left z-10 w-full">
+            <div className="flex justify-between items-center w-full">
+              <span className="flex items-center gap-1.5 text-[9.5px] text-[#7c5cff] font-mono font-bold tracking-widest uppercase">
+                <ShieldCheck className="h-4 w-4 text-[#00ffa3] drop-shadow-[0_0_8px_rgba(0,255,163,0.3)]" /> 
+                PROGRES DANA DARURAT
+              </span>
+              <span className="text-[9px] text-slate-400 font-mono">STANDAR LEVEL: {widgetTargetMultiplier}X PENGELUARAN</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-y-1.5 md:gap-x-6">
+              <div>
+                <p className="text-[10px] text-[#9aa4bf]">Target Ideal ({widgetPeriodMonths} Bln Rerata):</p>
+                <p className="text-sm font-black font-mono text-white mt-0.5">{formatIDRWithSpace(widgetTargetAmount)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-[#9aa4bf]">Dana Terkumpul saat ini:</p>
+                <p className="text-sm font-black font-mono text-[#00ffa3] mt-0.5">{formatIDRWithSpace(widgetTotalAvailable)}</p>
+              </div>
+              <div className="flex flex-col justify-end">
+                <div className="flex justify-between text-[10px] mb-1">
+                  <span className="text-[#9aa4bf]">Sisa Target:</span>
+                  <span className="font-mono font-bold text-[#ff5c7a]">{formatIDRWithSpace(widgetRemainingNeeded)}</span>
+                </div>
+                {/* Visual mini progress bar */}
+                <div className="w-full h-1.5 rounded-full bg-white/[0.03] border border-white/[0.04] overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 bg-gradient-to-r ${
+                      widgetProgressPercent >= 70 ? 'from-[#00ffa3] to-emerald-400' : widgetProgressPercent >= 30 ? 'from-[#ffb547] to-amber-500' : 'from-[#ff5c7a] to-rose-600'
+                    }`}
+                    style={{ width: `${widgetProgressPercent}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-left md:text-right shrink-0 flex items-center md:flex-col justify-between w-full md:w-auto md:justify-center border-t md:border-t-0 md:border-l border-white/[0.04] pt-2.5 md:pt-0 md:pl-5 gap-1 shrink-0 z-10">
+            <div>
+              <p className="text-[9px] text-[#9aa4bf] font-mono font-bold tracking-widest uppercase">KEAMANAN FINANSIAL</p>
+              <p className={`text-xl font-black mt-0.5 leading-none ${widgetProgressPercent >= 70 ? 'text-[#00ffa3]' : widgetProgressPercent >= 30 ? 'text-[#ffb547]' : 'text-[#ff5c7a]'}`}>
+                {widgetProgressPercent}%
+              </p>
+            </div>
+            <span className="text-[10px] text-[#7c5cff] group-hover:text-[#00ffa3] font-black font-mono transition-colors flex items-center gap-0.5 mt-1.5">
+              Kelola &rarr;
+            </span>
           </div>
         </div>
 

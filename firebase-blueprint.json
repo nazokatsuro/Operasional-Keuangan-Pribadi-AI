@@ -1,0 +1,22 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User preferences and settings, including sidebar menu order",
+      "type": "object",
+      "properties": {
+        "sidebarOrder": {
+          "type": "array",
+          "description": "Custom ordered list of sidebar menu IDs"
+        }
+      },
+      "required": ["sidebarOrder"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User document containing sidebar preferences"
+    }
+  }
+}

@@ -365,7 +365,7 @@ export function HutangPiutangView({
                     className="w-full px-3 py-2 bg-[#0c1020] text-xs text-white rounded-xl border border-white/5 focus:outline-none focus:border-[#7c5cff]"
                   >
                     {accounts.map(acc => (
-                      <option key={acc.id} value={acc.name}>
+                      <option key={acc.id} value={acc.name} className="bg-[#0b1020] text-white">
                         {acc.name} ({formatCurrency(acc.balance)})
                       </option>
                     ))}
@@ -523,7 +523,7 @@ export function HutangPiutangView({
                   className="w-full px-3 py-2 bg-[#0c1020] text-xs text-white rounded-xl border border-white/5 focus:outline-none focus:border-[#7c5cff]"
                 >
                   {accounts.map(acc => (
-                    <option key={acc.id} value={acc.name}>
+                    <option key={acc.id} value={acc.name} className="bg-[#0b1020] text-white">
                       {acc.name} ({formatCurrency(acc.balance)})
                     </option>
                   ))}

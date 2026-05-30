@@ -628,12 +628,12 @@ export function AsetView({
                     onChange={(e) => setFormCategory(e.target.value as any)}
                     className="w-full px-2.5 py-2.5 bg-[#0c1020] text-xs text-white border border-white/5 rounded-xl cursor-pointer"
                   >
-                    <option value="Crypto">Crypto</option>
-                    <option value="Gold">Emas (Gold)</option>
-                    <option value="Saham">Pasar Saham</option>
-                    <option value="MutualFund">Reksa Dana</option>
-                    <option value="Forex">Valas (Forex)</option>
-                    <option value="Properti">Properti</option>
+                    <option value="Crypto" className="bg-[#0b1020] text-white">Crypto</option>
+                    <option value="Gold" className="bg-[#0b1020] text-white">Emas (Gold)</option>
+                    <option value="Saham" className="bg-[#0b1020] text-white">Pasar Saham</option>
+                    <option value="MutualFund" className="bg-[#0b1020] text-white">Reksa Dana</option>
+                    <option value="Forex" className="bg-[#0b1020] text-white">Valas (Forex)</option>
+                    <option value="Properti" className="bg-[#0b1020] text-white">Properti</option>
                   </select>
                 </div>
               </div>

@@ -9,7 +9,7 @@ import {
   Target, Award, HeartPulse, Sparkles, ChevronRight, Utensils, Car, ShoppingBag, 
   Wifi, HelpCircle, ShieldCheck, Smartphone, Info, Calendar, Settings, BarChart2,
   FileSpreadsheet, Plus, AlertCircle, Edit2, Trash2, Copy, Download, Upload,
-  RefreshCw, X, Menu, Bell, Search, LogOut, Sun, Moon, FileText, Instagram
+  RefreshCw, X, Menu, Bell, Search, LogOut, Sun, Moon, FileText, Instagram, Layers, GripVertical, ChevronUp, ChevronDown
 } from 'lucide-react';
 
 // Modular View Imports
@@ -21,6 +21,20 @@ import { HutangPiutangView } from './components/HutangPiutangView';
 import { KalenderView } from './components/KalenderView';
 import { StatistikView } from './components/StatistikView';
 import { AiInputView } from './components/AiInputView';
+
+// Emergency Fund Planner Import
+import { EmergencyFundPlannerView, EmergencyFundConfig } from './components/EmergencyFundPlannerView';
+
+// UPGRADE PREMIUM VIEWS
+import { FinancialGoalsView } from './components/FinancialGoalsView';
+import { BudgetPlannerView } from './components/BudgetPlannerView';
+import { CashflowForecastView } from './components/CashflowForecastView';
+import { RecurringTransactionView } from './components/RecurringTransactionView';
+import { FinancialHealthView } from './components/FinancialHealthView';
+import { NotificationCenterView } from './components/NotificationCenterView';
+import { AdvancedStatisticsView } from './components/AdvancedStatisticsView';
+
+import { Goal, RecurringTransaction, BillReminder, FinancialNotification } from './types';
 
 // Helper Utilities Imports
 import { 
@@ -38,8 +52,11 @@ import {
   saveDraftFile, 
   getGDriveAccessToken,
   DraftPayload,
-  auth
+  auth,
+  db
 } from './utils/googleDriveHelper';
+import { doc, getDoc, setDoc, getDocFromServer } from 'firebase/firestore';
+import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
   // 1. STATE MANAGEMENT (LOADED FROM LOCALSTORAGE WITH DEFAULT POPULATION FALLBACK)
@@ -175,6 +192,175 @@ interface UserProfile {
 
   // Clear App data verification lock popups
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  // --- PREMIUM ADVANCED FINANCIAL SUITE STATES ---
+  const [goals, setGoals] = useState<Goal[]>(() => {
+    try {
+      const saved = localStorage.getItem('LKP_GOALS');
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return [
+      { id: 'g_1', name: 'Dana Darurat 6Bln', category: 'Dana Darurat', targetAmount: 24000000, currentAmount: 8500000, deadline: '2026-12-31', color: '#7c5cff' },
+      { id: 'g_2', name: 'Beli Laptop Pro', category: 'Target Custom', targetAmount: 18000000, currentAmount: 12000000, deadline: '2026-08-31', color: '#10b981' }
+    ];
+  });
+
+  const [recurringTransactions, setRecurringTransactions] = useState<RecurringTransaction[]>(() => {
+    try {
+      const saved = localStorage.getItem('LKP_RECURRING');
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return [
+      { id: 'r_1', name: 'Spotify Premium Family', nominal: 89000, category: 'Langganan', source: 'GoPay', frequency: 'Bulanan', status: 'Aktif' },
+      { id: 'r_2', name: 'Netflix Ultra HD', nominal: 186000, category: 'Langganan', source: 'Jago', frequency: 'Bulanan', status: 'Aktif' },
+      { id: 'r_3', name: 'Gaji Bulanan Utama', nominal: 15000000, category: 'Gaji', source: 'BCA', frequency: 'Bulanan', status: 'Aktif' }
+    ];
+  });
+
+  const [billReminders, setBillReminders] = useState<BillReminder[]>(() => {
+    try {
+      const saved = localStorage.getItem('LKP_REMINDERS');
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return [
+      { id: 'rem_1', name: 'Internet Rumah Biznet', nominal: 375000, dueDate: '2026-06-05', category: 'Internet', reminderPeriod: 'H-3' },
+      { id: 'rem_2', name: 'BPJS Kesehatan Mandiri', nominal: 150000, dueDate: '2026-06-10', category: 'Kesehatan', reminderPeriod: 'H-1' }
+    ];
+  });
+
+  const [notifications, setNotifications] = useState<FinancialNotification[]>(() => {
+    try {
+      const saved = localStorage.getItem('LKP_NOTIFICATIONS');
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return [
+      { id: 'n_1', title: 'Peringatan Anggaran Makan hampir Habis!', message: 'Kategori Makan telah menyerap 85% dari batas bulanan Anda.', category: 'Budget Warning', date: '2026-05-30', isRead: false },
+      { id: 'n_2', title: 'Saran Pertumbuhan Dana Darurat', message: 'Anda dapat mencapai target celengan Dana Darurat dalam 5 bulan dengan menabung Rp1.000.000/bln.', category: 'AI Recommendation', date: '2026-05-29', isRead: false }
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('LKP_GOALS', JSON.stringify(goals));
+  }, [goals]);
+
+  useEffect(() => {
+    localStorage.setItem('LKP_RECURRING', JSON.stringify(recurringTransactions));
+  }, [recurringTransactions]);
+
+  useEffect(() => {
+    localStorage.setItem('LKP_REMINDERS', JSON.stringify(billReminders));
+  }, [billReminders]);
+
+  useEffect(() => {
+    localStorage.setItem('LKP_NOTIFICATIONS', JSON.stringify(notifications));
+  }, [notifications]);
+
+  // Emergency Fund State and Persistence
+  const [emergencyConfig, setEmergencyConfig] = useState<EmergencyFundConfig>(() => {
+    const defaultVal: EmergencyFundConfig = {
+      periodMonths: 3,
+      statusKey: 'lajang',
+      customMonths: 3,
+      selectedSources: ['acc-1', 'acc-2', 'acc-6', 'acc-11'], // select BCA, Mandiri, Jago, Cash by default
+      manualMonthlySavings: 1500000,
+      contributions: [
+        { id: 'contrib-1', date: '2026-05-15', amount: 2000000, note: 'Sisa uang jajan awal bulan', source: 'BCA' },
+        { id: 'contrib-2', date: '2026-05-28', amount: 1000000, note: 'Rutin bulanan mandiri', source: 'Mandiri' }
+      ]
+    };
+    try {
+      const saved = localStorage.getItem('LKP_EMERGENCY_FUND_CONFIG');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Error loading LKP_EMERGENCY_FUND_CONFIG', e);
+    }
+    return defaultVal;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('LKP_EMERGENCY_FUND_CONFIG', JSON.stringify(emergencyConfig));
+  }, [emergencyConfig]);
+
+  // --- CUSTOM SIDEBAR MENU ORDER STATE ---
+  const DEFAULT_MENU_ORDER = [
+    'dashboard',
+    'transactions',
+    'emergency_fund',
+    'goals',
+    'budget',
+    'forecast',
+    'autopay',
+    'health',
+    'notifications_tab',
+    'accounts',
+    'assets',
+    'debts',
+    'calendar',
+    'statistics'
+  ];
+
+  const [sidebarOrder, setSidebarOrder] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('LKP_SIDEBAR_ORDER');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validIds = parsed.filter(id => DEFAULT_MENU_ORDER.includes(id));
+          const missing = DEFAULT_MENU_ORDER.filter(id => !validIds.includes(id));
+          return [...validIds, ...missing];
+        }
+      }
+    } catch (e) {
+      console.error('Error loading LKP_SIDEBAR_ORDER', e);
+    }
+    return DEFAULT_MENU_ORDER;
+  });
+
+  const [isEditingSidebar, setIsEditingSidebar] = useState<boolean>(false);
+  const [tempSidebarOrder, setTempSidebarOrder] = useState<string[]>([]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+  const handleDragStart = (e: any, index: number) => {
+    if (e && e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+    }
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: any, index: number) => {
+    if (e && e.preventDefault) {
+      e.preventDefault();
+    }
+    if (draggedIndex === null || draggedIndex === index) return;
+    const newOrder = [...tempSidebarOrder];
+    const draggedItem = newOrder[draggedIndex];
+    newOrder.splice(draggedIndex, 1);
+    newOrder.splice(index, 0, draggedItem);
+    setTempSidebarOrder(newOrder);
+    setDraggedIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
+
+  const moveMenuUp = (index: number) => {
+    if (index <= 0) return;
+    const newOrder = [...tempSidebarOrder];
+    const item = newOrder[index];
+    newOrder.splice(index, 1);
+    newOrder.splice(index - 1, 0, item);
+    setTempSidebarOrder(newOrder);
+  };
+
+  const moveMenuDown = (index: number) => {
+    if (index >= tempSidebarOrder.length - 1) return;
+    const newOrder = [...tempSidebarOrder];
+    const item = newOrder[index];
+    newOrder.splice(index, 1);
+    newOrder.splice(index + 1, 0, item);
+    setTempSidebarOrder(newOrder);
+  };
   
   // Custom theme variables (light/dark style overrides)
   const isLight = userProfile.themeMode === 'light';
@@ -204,6 +390,64 @@ interface UserProfile {
     };
     handleInitialRefreshAuth();
   }, []);
+
+  // Validate Connection to Firestore & Fetch Menu Order on Login
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('the client is offline')) {
+          console.warn("Please check your Firebase configuration.");
+        }
+      }
+    };
+    testConnection();
+  }, []);
+
+  const handleFirestoreError = (error: unknown, operationType: string, path: string | null) => {
+    const errInfo = {
+      error: error instanceof Error ? error.message : String(error),
+      authInfo: {
+        userId: auth.currentUser?.uid,
+        email: auth.currentUser?.email,
+        emailVerified: auth.currentUser?.emailVerified,
+      },
+      operationType,
+      path
+    };
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
+    throw new Error(JSON.stringify(errInfo));
+  };
+
+  useEffect(() => {
+    const loadSidebarFromFirestore = async () => {
+      if (!gdriveUser) return;
+      try {
+        const userDocRef = doc(db, 'users', gdriveUser.uid);
+        const docSnap = await getDoc(userDocRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data && Array.isArray(data.sidebarOrder)) {
+            const validIds = data.sidebarOrder.filter((id: string) => DEFAULT_MENU_ORDER.includes(id));
+            const missing = DEFAULT_MENU_ORDER.filter((id: string) => !validIds.includes(id));
+            const finalOrder = [...validIds, ...missing];
+
+            setSidebarOrder(finalOrder);
+            localStorage.setItem('LKP_SIDEBAR_ORDER', JSON.stringify(finalOrder));
+            showToast('Urutan menu berhasil disinkronkan dari Firestore!', 'success');
+          }
+        }
+      } catch (err) {
+        try {
+          handleFirestoreError(err, 'get', `users/${gdriveUser.uid}`);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    };
+    loadSidebarFromFirestore();
+  }, [gdriveUser]);
 
   // Automatic Draft Search and Countdown Restore sequence
   const handleCheckAndAutoLoadDraft = async (token: string) => {
@@ -238,6 +482,7 @@ interface UserProfile {
           if (draft.debts) setDebts(draft.debts);
           if (draft.userProfile) setUserProfile(draft.userProfile);
           if (draft.categoryBudgets) setCategoryBudgets(draft.categoryBudgets);
+          if (draft.emergencyConfig) setEmergencyConfig(draft.emergencyConfig);
 
           // Force instant save locally too to avoid stale states
           if (draft.transactions) localStorage.setItem('LKP_TRANSACTIONS', JSON.stringify(draft.transactions));
@@ -246,6 +491,7 @@ interface UserProfile {
           if (draft.debts) localStorage.setItem('LKP_DEBTS', JSON.stringify(draft.debts));
           if (draft.userProfile) localStorage.setItem('LKP_USER_PROFILE', JSON.stringify(draft.userProfile));
           if (draft.categoryBudgets) localStorage.setItem('LKP_CATEGORY_BUDGETS', JSON.stringify(draft.categoryBudgets));
+          if (draft.emergencyConfig) localStorage.setItem('LKP_EMERGENCY_FUND_CONFIG', JSON.stringify(draft.emergencyConfig));
 
           showToast('Cadangan Cloud berhasil dipulihkan secara otomatis!', 'success');
         } else {
@@ -306,7 +552,8 @@ interface UserProfile {
         assets,
         debts,
         userProfile,
-        categoryBudgets
+        categoryBudgets,
+        emergencyConfig
       };
       const ok = await saveDraftFile(gdriveToken, payload);
       if (ok) {
@@ -333,7 +580,8 @@ interface UserProfile {
         assets,
         debts,
         userProfile,
-        categoryBudgets
+        categoryBudgets,
+        emergencyConfig
       };
       const ok = await saveDraftFile(gdriveToken, payload);
       if (ok) {
@@ -342,7 +590,7 @@ interface UserProfile {
     }, 5000); // Debounce to prevent hitting rapid rate limits during fast inputs
 
     return () => clearTimeout(autoSaveTimer);
-  }, [transactions, accounts, assets, debts, userProfile, categoryBudgets, gdriveToken]);
+  }, [transactions, accounts, assets, debts, userProfile, categoryBudgets, emergencyConfig, gdriveToken]);
 
   // 2. AUTO-SAVE DEBOUNCE SYSTEM TO LOCALSTORAGE ON MUTATION
   useEffect(() => {
@@ -647,6 +895,39 @@ interface UserProfile {
       date: parsed.date
     });
 
+    // Check for emergency fund phrases to automatically record contribution
+    const normTitle = parsed.title.toLowerCase();
+    const isEmergency = normTitle.includes('dana darurat') || normTitle.includes('emergency fund') || normTitle.includes('emergency');
+    if (isEmergency) {
+      const newContrib = {
+        id: `contrib-${Date.now()}`,
+        date: parsed.date || new Date().toISOString().split('T')[0],
+        amount: parsed.nominal,
+        note: parsed.title,
+        source: parsed.source || 'Cash'
+      };
+
+      setEmergencyConfig(prev => {
+        const updatedContribs = [newContrib, ...(prev.contributions || [])];
+        return {
+          ...prev,
+          contributions: updatedContribs
+        };
+      });
+      // Push automated notification
+      setNotifications(prev => [
+        {
+          id: `emergency-notif-ai-${Date.now()}`,
+          title: '🛡 Kontribusi AI Dana Darurat',
+          message: `Input AI cerdas menyisihkan Rp ${parsed.nominal.toLocaleString('id-ID')} ke portfolio dana darurat Anda melalui ${parsed.source || 'Kas'}!`,
+          category: 'AI Recommendation',
+          date: parsed.date || new Date().toISOString().split('T')[0],
+          isRead: false
+        },
+        ...prev
+      ]);
+    }
+
     // 2. If it is an asset acquisition, directly add it to the asset portfolio
     const isPurchase = parsed.type === 'Pengeluaran';
     if (isPurchase) {
@@ -699,14 +980,7 @@ interface UserProfile {
 
     const parsed = parseFinanceText(navbarAiInput);
     if (parsed && parsed.parsedOk && parsed.nominal > 0) {
-      handleAddTransaction({
-        title: parsed.title,
-        nominal: parsed.nominal,
-        type: parsed.type,
-        category: parsed.category,
-        source: parsed.source,
-        date: parsed.date
-      });
+      handleCommitAI(parsed);
       showToast(`AI Berhasil mencatat "${parsed.title}" sebesar ${formatCurrency(parsed.nominal)} ke ${parsed.source}!`, 'success');
       setNavbarAiInput('');
     } else {
@@ -1215,6 +1489,13 @@ interface UserProfile {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart2 },
     { id: 'transactions', label: 'Transaksi', icon: FileSpreadsheet },
+    { id: 'emergency_fund', label: 'Dana Darurat Cerdas', icon: ShieldCheck },
+    { id: 'goals', label: 'Target Keuangan', icon: Target },
+    { id: 'budget', label: 'Perencanaan Budget', icon: FileSpreadsheet },
+    { id: 'forecast', label: 'Prediksi & Net Worth', icon: TrendingUp },
+    { id: 'autopay', label: 'Transaksi Berulang', icon: RefreshCw },
+    { id: 'health', label: 'Kesehatan & Rasio', icon: HeartPulse },
+    { id: 'notifications_tab', label: 'Pusat Notifikasi', icon: Bell },
     { id: 'accounts', label: 'Sumber Uang', icon: Wallet },
     { id: 'assets', label: 'Tabungan Aset', icon: Award },
     { id: 'debts', label: 'Hutang Piutang', icon: HeartPulse },
@@ -1223,36 +1504,51 @@ interface UserProfile {
     { id: 'settings', label: 'Pengaturan', icon: Settings },
   ];
 
+  const sortedMenuItems = React.useMemo(() => {
+    const listToOrder = menuItems.filter(item => item.id !== 'settings');
+    const settingsItem = menuItems.find(item => item.id === 'settings');
+    
+    const sorted = [...listToOrder].sort((a, b) => {
+      const idxA = sidebarOrder.indexOf(a.id);
+      const idxB = sidebarOrder.indexOf(b.id);
+      const posA = idxA === -1 ? 999 : idxA;
+      const posB = idxB === -1 ? 999 : idxB;
+      return posA - posB;
+    });
+
+    return settingsItem ? [...sorted, settingsItem] : sorted;
+  }, [sidebarOrder]);
+
   return (
     <div className={`min-h-screen flex ${
       isLight ? 'bg-slate-50 text-slate-900' : 'bg-[#0b1020] text-white'
     } antialiased transition-colors duration-200`}>
       
       {/* 1. SIDEBAR FOR DESKTOP */}
-      <aside className={`hidden xl:flex flex-col justify-between w-64 border-r shrink-0 transition-colors duration-200 ${
+      <aside className={`hidden xl:flex flex-col w-64 border-r shrink-0 transition-colors duration-200 ${
         isLight ? 'bg-white border-slate-200' : 'bg-[#0b1020]/80 backdrop-blur-md border-white/[0.06]'
       }`}>
         {/* Top brand */}
         <div className="p-5 flex flex-col gap-4">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-1">
             <span className="h-7 w-7 bg-[#7c5cff] rounded-xl flex items-center justify-center text-white text-xs font-mono font-bold leading-none shadow-[0_0_15px_rgba(124,92,255,0.4)]">
               N
             </span>
-            <span className="text-sm font-extrabold tracking-tight uppercase font-mono">Laporan Keuangan</span>
+            <span className="text-sm font-extrabold tracking-tight uppercase font-mono">LKP PREMIUM</span>
           </div>
 
           {/* User mini badge ticker */}
-          <div className={`p-4.5 rounded-2xl flex items-center gap-3 border ${
-            isLight ? 'bg-slate-50 border-slate-100' : 'bg-white/[0.03] border-white/[0.05]'
+          <div className={`p-3 rounded-2xl flex items-center gap-2.5 border ${
+            isLight ? 'bg-slate-50 border-slate-100' : 'bg-white/[0.01] border-white/[0.05]'
           }`}>
             <img 
               src={userProfile.avatarUrl} 
               alt="Avatar" 
-              className="h-8.5 w-8.5 rounded-full object-cover ring-1 ring-white/10"
+              className="h-8 w-8 rounded-full object-cover ring-1 ring-white/10"
             />
             <div className="min-w-0 flex-1">
               <h3 className="text-xs font-bold truncate leading-tight">{userProfile.name}</h3>
-              <div className="mt-1 flex items-center gap-1.5 text-[#9aa4bf] font-medium text-[10px]">
+              <div className="mt-1 flex items-center gap-1.5 text-[#9aa4bf] font-medium text-[9px]">
                 <Instagram className="h-3.5 w-3.5 text-pink-500 shrink-0" />
                 <span className="truncate">IG : nomadenapp</span>
               </div>
@@ -1260,29 +1556,194 @@ interface UserProfile {
           </div>
         </div>
 
-        {/* Links listing scrollable menu */}
-        <nav className="px-3 space-y-1 grow py-2 overflow-y-auto">
-          {menuItems.map(item => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
+        {/* ATUR SIDEBAR ACTION CONTROLS */}
+        <div className="px-5 pb-2">
+          {isEditingSidebar ? (
+            <div className={`p-3 rounded-xl border ${
+              isLight ? 'bg-indigo-50 border-indigo-100/50' : 'bg-[#7c5cff]/10 border-[#7c5cff]/20'
+            } flex flex-col gap-2`}>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold uppercase font-mono tracking-wider text-[#7c5cff]">Atur Sidebar</span>
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-medium leading-normal">Seret item menu untuk menyusun ulang.</p>
+              
+              <div className="flex gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSidebarOrder(tempSidebarOrder);
+                    localStorage.setItem('LKP_SIDEBAR_ORDER', JSON.stringify(tempSidebarOrder));
+                    if (gdriveUser) {
+                      const userRef = doc(db, 'users', gdriveUser.uid);
+                      setDoc(userRef, { sidebarOrder: tempSidebarOrder }, { merge: true })
+                        .then(() => {
+                          showToast('Urutan baru disimpan ke cloud!', 'success');
+                        })
+                        .catch((e) => {
+                          try {
+                            handleFirestoreError(e, 'write', `users/${gdriveUser.uid}`);
+                          } catch (err) {
+                            console.error(err);
+                          }
+                          showToast('Gagal menyinkronkan urutan ke cloud.', 'error');
+                        });
+                    } else {
+                      showToast('Urutan baru disimpan di lokal!', 'success');
+                    }
+                    setIsEditingSidebar(false);
+                  }}
+                  className="flex-1 py-1 px-2 text-[10px] font-bold rounded-lg bg-[#16c784] text-white hover:opacity-90 transition-all text-center cursor-pointer"
+                >
+                  Simpan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditingSidebar(false);
+                    showToast('Pengaturan urutan dibatalkan.', 'info');
+                  }}
+                  className="flex-1 py-1 px-2 text-[10px] font-bold rounded-lg bg-slate-500/20 text-slate-400 hover:bg-slate-500/30 transition-all text-center cursor-pointer"
+                >
+                  Batal
+                </button>
+              </div>
+
               <button
-                key={item.id}
+                type="button"
                 onClick={() => {
-                  setActiveTab(item.id);
-                  setMobileMenuOpen(false);
+                  setTempSidebarOrder(DEFAULT_MENU_ORDER);
+                  showToast('Urutan menu dibalikkan ke default (klik Simpan untuk menerapkan)!', 'warning');
                 }}
-                className={`w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-left text-xs font-bold capitalize transition-all cursor-pointer ${
-                  isActive 
-                    ? 'bg-[#7c5cff] text-white' 
-                    : isLight ? 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' : 'text-[#9aa4bf] hover:bg-white/[0.04] hover:text-white'
+                className="w-full text-center text-[9px] font-bold tracking-tight py-1 text-red-500 hover:underline cursor-pointer mt-0.5"
+              >
+                Reset Urutan Menu
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  // Initialize temp list matching current sidebarOrder
+                  const moveables = sidebarOrder.filter(id => id !== 'settings');
+                  setTempSidebarOrder(moveables);
+                  setIsEditingSidebar(true);
+                  showToast('Mode Atur Sidebar diaktifkan!', 'info');
+                }}
+                className={`w-full py-2 px-3 text-[10px] font-extrabold uppercase font-mono tracking-wider rounded-xl border flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer ${
+                  isLight 
+                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200' 
+                    : 'bg-white/[0.02] border-white/[0.05] hover:bg-white/[0.05] text-[#9aa4bf]'
                 }`}
               >
-                <Icon className={`h-4.5 w-4.5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                <span>{item.label}</span>
+                <Layers className="h-3.5 w-3.5 shrink-0 text-[#7c5cff]" />
+                Atur Sidebar Menu
               </button>
-            );
-          })}
+            </div>
+          )}
+        </div>
+
+        {/* Links listing scrollable menu */}
+        <nav className="px-3 space-y-1 grow py-2 overflow-y-auto">
+          {isEditingSidebar ? (
+            <>
+              <div className="space-y-1 pb-4 flex flex-col">
+                {tempSidebarOrder.map((id, idx) => {
+                  const item = menuItems.find(i => i.id === id);
+                  if (!item) return null;
+                  const Icon = item.icon;
+                  const isBeingDragged = draggedIndex === idx;
+
+                  return (
+                    <div
+                      key={item.id}
+                      draggable={true}
+                      onDragStart={(e) => handleDragStart(e, idx)}
+                      onDragOver={(e) => handleDragOver(e, idx)}
+                      onDragEnd={handleDragEnd}
+                      className={`flex items-center justify-between w-full px-3 py-2 rounded-xl text-left text-xs font-bold capitalize border transition-all select-none hover:border-[#7c5cff]/40 ${
+                        isBeingDragged 
+                          ? 'border-dashed border-[#7c5cff] bg-[#7c5cff]/5 opacity-50 scale-95'
+                          : isLight 
+                            ? 'bg-white border-slate-200 text-slate-700 shadow-sm hover:shadow-md' 
+                            : 'bg-slate-950/40 border-white/[0.06] text-[#9aa4bf] shadow-md hover:bg-slate-950/60'
+                      }`}
+                      style={{ cursor: 'grab' }}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <GripVertical className="h-4 w-4 text-slate-400/80 hover:text-[#7c5cff] shrink-0 cursor-grab active:cursor-grabbing transition-colors" />
+                        <Icon className="h-4 w-4 text-slate-400 shrink-0" />
+                        <span className="truncate">{item.label}</span>
+                      </div>
+
+                      {/* Manual Up/Down touch-friendly navigation buttons */}
+                      <div className="flex items-center gap-0.5 shrink-0 ml-1.5">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => moveMenuUp(idx)}
+                          className={`p-1 rounded-md transition-all ${
+                            idx === 0 
+                              ? 'text-slate-600/20 cursor-not-allowed' 
+                              : 'text-slate-400 hover:text-[#7c5cff] hover:bg-[#7c5cff]/10 cursor-pointer'
+                          }`}
+                        >
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === tempSidebarOrder.length - 1}
+                          onClick={() => moveMenuDown(idx)}
+                          className={`p-1 rounded-md transition-all ${
+                            idx === tempSidebarOrder.length - 1 
+                              ? 'text-slate-600/20 cursor-not-allowed' 
+                              : 'text-slate-400 hover:text-[#7c5cff] hover:bg-[#7c5cff]/10 cursor-pointer'
+                          }`}
+                        >
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {/* Static Settings locked at bottom */}
+              <div className="border-t border-white/[0.05] mt-2 pt-2 opacity-50">
+                <div className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-bold capitalize border border-transparent">
+                  <Settings className="h-4.5 w-4.5 text-slate-500" />
+                  <span>Pengaturan</span>
+                  <span className="ml-auto text-[8px] uppercase font-mono tracking-wider bg-slate-500/10 px-1 py-0.5 rounded text-slate-400">Locked</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            sortedMenuItems.map(item => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-left text-xs font-bold capitalize transition-all cursor-pointer ${
+                    isActive 
+                      ? 'bg-[#7c5cff] text-white shadow-md' 
+                      : isLight ? 'text-slate-600 hover:bg-slate-100 hover:text-slate-900' : 'text-[#9aa4bf] hover:bg-white/[0.03] hover:text-white'
+                  }`}
+                >
+                  <Icon className={`h-4.5 w-4.5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })
+          )}
         </nav>
       </aside>
 
@@ -1658,25 +2119,147 @@ interface UserProfile {
               </div>
 
               <div className="space-y-1 overflow-y-auto">
-                {menuItems.map(item => {
-                  const Icon = item.icon;
-                  const isActive = activeTab === item.id;
-                  return (
+                {isEditingSidebar ? (
+                  <>
+                    <div className="space-y-1 pb-4 flex flex-col">
+                      {tempSidebarOrder.map((id, idx) => {
+                        const item = menuItems.find(i => i.id === id);
+                        if (!item) return null;
+                        const Icon = item.icon;
+                        const isBeingDragged = draggedIndex === idx;
+
+                        return (
+                          <div
+                            key={item.id}
+                            draggable={true}
+                            onDragStart={(e) => handleDragStart(e, idx)}
+                            onDragOver={(e) => handleDragOver(e, idx)}
+                            onDragEnd={handleDragEnd}
+                            className={`flex items-center justify-between w-full px-3 py-2 rounded-xl text-left text-xs font-bold capitalize border transition-all select-none ${
+                              isBeingDragged 
+                                ? 'border-dashed border-[#7c5cff] bg-[#7c5cff]/5 opacity-50 scale-95'
+                                : 'bg-slate-800/40 border-white/5 text-[#9aa4bf]'
+                            }`}
+                            style={{ cursor: 'grab' }}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <GripVertical className="h-4 w-4 text-slate-500 shrink-0 cursor-grab active:cursor-grabbing" />
+                              <Icon className="h-4 w-4 text-slate-400 shrink-0" />
+                              <span className="truncate">{item.label}</span>
+                            </div>
+
+                            {/* Manual Up/Down touch fallback controls */}
+                            <div className="flex items-center gap-0.5 shrink-0 ml-1.5">
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() => moveMenuUp(idx)}
+                                className={`p-1 rounded-md transition-all ${
+                                  idx === 0 
+                                    ? 'text-slate-600/20 cursor-not-allowed' 
+                                    : 'text-slate-400 hover:text-[#7c5cff] hover:bg-white/5 cursor-pointer'
+                                }`}
+                              >
+                                <ChevronUp className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === tempSidebarOrder.length - 1}
+                                onClick={() => moveMenuDown(idx)}
+                                className={`p-1 rounded-md transition-all ${
+                                  idx === tempSidebarOrder.length - 1 
+                                    ? 'text-slate-600/20 cursor-not-allowed' 
+                                    : 'text-slate-400 hover:text-[#7c5cff] hover:bg-white/5 cursor-pointer'
+                                }`}
+                              >
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="border-t border-white/5 pt-3 flex flex-col gap-2">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSidebarOrder(tempSidebarOrder);
+                            localStorage.setItem('LKP_SIDEBAR_ORDER', JSON.stringify(tempSidebarOrder));
+                            if (gdriveUser) {
+                              const userRef = doc(db, 'users', gdriveUser.uid);
+                              setDoc(userRef, { sidebarOrder: tempSidebarOrder }, { merge: true })
+                                .then(() => showToast('Urutan baru disimpan ke cloud!', 'success'))
+                                .catch(() => showToast('Gagal menyinkronkan urutan.', 'error'));
+                            } else {
+                              showToast('Urutan baru disimpan di lokal!', 'success');
+                            }
+                            setIsEditingSidebar(false);
+                          }}
+                          className="flex-1 py-1.5 px-2 text-[10px] font-bold rounded-lg bg-[#16c784] text-white text-center cursor-pointer"
+                        >
+                          Simpan
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsEditingSidebar(false);
+                            showToast('Pengaturan urutan dibatalkan.', 'info');
+                          }}
+                          className="flex-1 py-1.5 px-2 text-[10px] font-bold rounded-lg bg-white/10 text-slate-300 text-center cursor-pointer"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTempSidebarOrder(DEFAULT_MENU_ORDER);
+                          showToast('Urutan menu dibalikkan ke default!', 'warning');
+                        }}
+                        className="w-full text-center text-[9px] font-bold tracking-tight py-1 text-red-400 hover:underline cursor-pointer mt-0.5"
+                      >
+                        Reset Urutan Menu
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
                     <button
-                      key={item.id}
+                      type="button"
                       onClick={() => {
-                        setActiveTab(item.id);
-                        setMobileMenuOpen(false);
+                        const moveables = sidebarOrder.filter(id => id !== 'settings');
+                        setTempSidebarOrder(moveables);
+                        setIsEditingSidebar(true);
+                        showToast('Mode Atur Sidebar diaktifkan!', 'info');
                       }}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-bold capitalize transition-all cursor-pointer ${
-                        isActive ? 'bg-[#7c5cff] text-white' : 'text-[#9aa4bf] hover:bg-white/5'
-                      }`}
+                      className="w-full mb-3 py-2 px-3 text-[10px] font-mono font-bold uppercase tracking-wider rounded-xl border border-white/10 hover:bg-white/5 text-[#9aa4bf] flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer"
                     >
-                      <Icon className="h-4 w-4" />
-                      <span>{item.label}</span>
+                      <Layers className="h-3.5 w-3.5 shrink-0 text-[#7c5cff]" />
+                      Atur Sidebar Menu
                     </button>
-                  );
-                })}
+                    {sortedMenuItems.map(item => {
+                      const Icon = item.icon;
+                      const isActive = activeTab === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            setActiveTab(item.id);
+                            setMobileMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-bold capitalize transition-all cursor-pointer ${
+                            isActive ? 'bg-[#7c5cff] text-white' : 'text-[#9aa4bf] hover:bg-white/5'
+                          }`}
+                        >
+                          <Icon className="h-4 w-4" />
+                          <span>{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1694,6 +2277,77 @@ interface UserProfile {
                 userProfile={userProfile}
                 onNavigate={setActiveTab}
                 onCommitAI={handleCommitAI}
+                emergencyConfig={emergencyConfig}
+              />
+            )}
+
+            {activeTab === 'emergency_fund' && (
+              <EmergencyFundPlannerView
+                transactions={transactions}
+                accounts={accounts}
+                assets={assets}
+                onAddTransaction={handleAddTransaction}
+                onAddNotification={(notif) => {
+                  setNotifications(prev => [notif, ...prev]);
+                }}
+                emergencyConfig={emergencyConfig}
+                onUpdateEmergencyConfig={setEmergencyConfig}
+              />
+            )}
+
+            {activeTab === 'goals' && (
+              <FinancialGoalsView
+                goals={goals}
+                onAddGoal={(g: Goal) => setGoals(prev => [g, ...prev])}
+                onEditGoal={(updatedGoal: Goal) => setGoals(prev => prev.map(g => g.id === updatedGoal.id ? updatedGoal : g))}
+                onDeleteGoal={(id: string) => setGoals(prev => prev.filter(g => g.id !== id))}
+              />
+            )}
+
+            {activeTab === 'budget' && (
+              <BudgetPlannerView
+                transactions={transactions}
+                categoryBudgets={categoryBudgets}
+                onUpdateBudget={(cat, amt) => setCategoryBudgets(prev => ({ ...prev, [cat]: amt }))}
+              />
+            )}
+
+            {activeTab === 'forecast' && (
+              <CashflowForecastView
+                transactions={transactions}
+                accounts={accounts}
+                assets={assets}
+                debts={debts}
+              />
+            )}
+
+            {activeTab === 'autopay' && (
+              <RecurringTransactionView
+                recurringTransactions={recurringTransactions}
+                billReminders={billReminders}
+                onAddRecurring={(item) => setRecurringTransactions(prev => [item, ...prev])}
+                onUpdateRecurringStatus={(id, status) => setRecurringTransactions(prev => prev.map(r => r.id === id ? { ...r, status } : r))}
+                onDeleteRecurring={(id) => setRecurringTransactions(prev => prev.filter(r => r.id !== id))}
+                onAddBillReminder={(item) => setBillReminders(prev => [item, ...prev])}
+                onDeleteBillReminder={(id) => setBillReminders(prev => prev.filter(r => r.id !== id))}
+              />
+            )}
+
+            {activeTab === 'health' && (
+              <FinancialHealthView
+                transactions={transactions}
+                accounts={accounts}
+                assets={assets}
+                debts={debts}
+              />
+            )}
+
+            {activeTab === 'notifications_tab' && (
+              <NotificationCenterView
+                notifications={notifications}
+                onMarkRead={(id) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))}
+                onMarkAllRead={() => setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))}
+                onClearNotifications={() => setNotifications([])}
               />
             )}
 
@@ -2347,7 +3001,7 @@ interface UserProfile {
         <div className={`xl:hidden fixed bottom-0 left-0 right-0 h-14 border-t flex items-center justify-around px-2 z-30 shadow-[0_-4px_12px_rgba(0,0,0,0.15)] ${
           isLight ? 'bg-white border-slate-200' : 'bg-[#0b1020] border-white/[0.06]'
         }`}>
-          {menuItems.slice(0, 4).map(item => {
+          {sortedMenuItems.filter(item => item.id !== 'settings').slice(0, 4).map(item => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (

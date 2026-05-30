@@ -1,10 +1,12 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, User } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase with generated applet configuration
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+export const db = getFirestore(app);
 
 const provider = new GoogleAuthProvider();
 // Google Drive scope as requested
@@ -20,6 +22,7 @@ export interface DraftPayload {
   debts: any[];
   userProfile: any;
   categoryBudgets?: Record<string, number>;
+  emergencyConfig?: any;
 }
 
 /**

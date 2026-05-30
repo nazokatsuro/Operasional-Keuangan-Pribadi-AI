@@ -220,9 +220,9 @@ export function TransaksiView({
             onChange={(e) => setFilterType(e.target.value as any)}
             className="px-3 py-2 bg-[#0e1329] text-xs text-white border border-white/5 rounded-xl focus:outline-none focus:border-[#7c5cff] cursor-pointer"
           >
-            <option value="all">Semua Jenis Aliran</option>
-            <option value="Pemasukan">Pemasukan (+)</option>
-            <option value="Pengeluaran">Pengeluaran (-)</option>
+            <option value="all" className="bg-[#0b1020] text-white">Semua Jenis Aliran</option>
+            <option value="Pemasukan" className="bg-[#0b1020] text-white">Pemasukan (+)</option>
+            <option value="Pengeluaran" className="bg-[#0b1020] text-white">Pengeluaran (-)</option>
           </select>
 
           {/* Source Filter */}
@@ -231,9 +231,9 @@ export function TransaksiView({
             onChange={(e) => setFilterSource(e.target.value)}
             className="px-3 py-2 bg-[#0e1329] text-xs text-white border border-white/5 rounded-xl focus:outline-none focus:border-[#7c5cff] cursor-pointer"
           >
-            <option value="all">Semua Sumber Uang</option>
+            <option value="all" className="bg-[#0b1020] text-white">Semua Sumber Uang</option>
             {accounts.map(acc => (
-              <option key={acc.id} value={acc.name}>{acc.name}</option>
+              <option key={acc.id} value={acc.name} className="bg-[#0b1020] text-white">{acc.name}</option>
             ))}
           </select>
         </div>
@@ -251,10 +251,10 @@ export function TransaksiView({
               onChange={(e) => setSortBy(e.target.value as any)}
               className="bg-transparent text-xs text-[#00d4ff] font-bold focus:outline-none cursor-pointer"
             >
-              <option value="date-desc">Tanggal Terkini (Baru → Lama)</option>
-              <option value="date-asc">Tanggal Terlama (Lama → Baru)</option>
-              <option value="nominal-desc">Nominal Tertinggi</option>
-              <option value="nominal-asc">Nominal Terendah</option>
+              <option value="date-desc" className="bg-[#0b1020] text-white">Tanggal Terkini (Baru → Lama)</option>
+              <option value="date-asc" className="bg-[#0b1020] text-white">Tanggal Terlama (Lama → Baru)</option>
+              <option value="nominal-desc" className="bg-[#0b1020] text-white">Nominal Tertinggi</option>
+              <option value="nominal-asc" className="bg-[#0b1020] text-white">Nominal Terendah</option>
             </select>
           </div>
         </div>
@@ -542,7 +542,7 @@ export function TransaksiView({
                     className="w-full px-3 py-2 bg-[#0c1020] text-xs text-white border border-white/5 rounded-xl focus:outline-none focus:border-[#7c5cff] cursor-pointer"
                   >
                     {accounts.map(acc => (
-                      <option key={acc.id} value={acc.name}>{acc.name} (Sisa: {formatCurrency(acc.balance)})</option>
+                      <option key={acc.id} value={acc.name} className="bg-[#0b1020] text-white">{acc.name} (Sisa: {formatCurrency(acc.balance)})</option>
                     ))}
                   </select>
                 </div>
@@ -558,9 +558,9 @@ export function TransaksiView({
                     className="w-full px-3 py-2 bg-[#0c1020] text-xs text-white border border-white/5 rounded-xl focus:outline-none focus:border-[#7c5cff] cursor-pointer"
                   >
                     {formType === 'Pemasukan' ? (
-                      INCOME_CATEGORIES.map(cat => <option key={cat.name} value={cat.name}>{cat.name}</option>)
+                      INCOME_CATEGORIES.map(cat => <option key={cat.name} value={cat.name} className="bg-[#0b1020] text-white">{cat.name}</option>)
                     ) : (
-                      EXPENSE_CATEGORIES.map(cat => <option key={cat.name} value={cat.name}>{cat.name}</option>)
+                      EXPENSE_CATEGORIES.map(cat => <option key={cat.name} value={cat.name} className="bg-[#0b1020] text-white">{cat.name}</option>)
                     )}
                   </select>
                 </div>
@@ -598,9 +598,9 @@ export function TransaksiView({
                       onChange={(e) => setFormRecurringPeriod(e.target.value as any)}
                       className="bg-[#0c1020] text-xs text-[#00d4ff] font-mono font-bold focus:outline-none cursor-pointer"
                     >
-                      <option value="Harian">Harian</option>
-                      <option value="Mingguan">Mingguan</option>
-                      <option value="Bulanan">Bulanan</option>
+                      <option value="Harian" className="bg-[#0b1020] text-white">Harian</option>
+                      <option value="Mingguan" className="bg-[#0b1020] text-white">Mingguan</option>
+                      <option value="Bulanan" className="bg-[#0b1020] text-white">Bulanan</option>
                     </select>
                   )}
                 </div>
