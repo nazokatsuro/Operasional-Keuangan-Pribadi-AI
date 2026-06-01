@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Sparkles, ArrowRight, CornerDownLeft, Info, HelpCircle, 
   Check, Play, FileText, CheckCircle2, Trash2, ListChecks, ArrowDownRight, ArrowUpRight,
-  AlertTriangle
+  AlertTriangle, RefreshCw
 } from 'lucide-react';
 import { parseFinanceText, ParsedTransaction, preprocessInputToLines } from '../utils/aiParser';
 import { Account, formatCurrency } from '../utils/financeHelper';
@@ -16,14 +16,36 @@ interface AiInputViewProps {
   accounts: Account[];
   onCommitTransaction: (tx: ParsedTransaction) => void;
   compact?: boolean;
+  initialEngine?: 'lokal' | 'chatgpt';
 }
 
-export function AiInputView({ accounts, onCommitTransaction, compact }: AiInputViewProps) {
+export function AiInputView({ accounts, onCommitTransaction, compact, initialEngine }: AiInputViewProps) {
   // Multiline state handling
   const [inputText, setInputText] = useState('');
   const [parsedList, setParsedList] = useState<Array<ParsedTransaction & { rawText: string; id: number }>>([]);
   const [showAnimation, setShowAnimation] = useState(false);
   const [committedCount, setCommittedCount] = useState(0);
+
+  // Engine select state (lokal vs chatgpt)
+  const [engine, setEngine] = useState<'lokal' | 'chatgpt'>(() => {
+    if (initialEngine) return initialEngine;
+    return (localStorage.getItem('LKP_AI_PARSER_ENGINE') as 'lokal' | 'chatgpt') || 'lokal';
+  });
+  const [isGptParsing, setIsGptParsing] = useState(false);
+  const [gptError, setGptError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialEngine) {
+      setEngine(initialEngine);
+    }
+  }, [initialEngine]);
+
+  const handleEngineChange = (newEngine: 'lokal' | 'chatgpt') => {
+    setEngine(newEngine);
+    localStorage.setItem('LKP_AI_PARSER_ENGINE', newEngine);
+    setParsedList([]);
+    setGptError(null);
+  };
 
   // In-memory clarification overrides
   const [clarificationOverrides, setClarificationOverrides] = useState<Record<number, Partial<ParsedTransaction>>>({});
@@ -58,7 +80,11 @@ export function AiInputView({ accounts, onCommitTransaction, compact }: AiInputV
     { text: 'ongkir ekspedisi sicepat 22rb cash', label: 'Ongkir Paket' }
   ];
 
+  // Heuristic offline parser runs on input text when in 'lokal' engine mode
   useEffect(() => {
+    if (engine === 'chatgpt') {
+      return;
+    }
     if (!inputText) {
       setParsedList([]);
       return;
@@ -84,7 +110,82 @@ export function AiInputView({ accounts, onCommitTransaction, compact }: AiInputV
     }).filter(item => item !== null) as Array<ParsedTransaction & { rawText: string; id: number }>;
 
     setParsedList(parsedItems);
-  }, [inputText, clarificationOverrides]);
+  }, [inputText, clarificationOverrides, engine]);
+
+  // Server-side ChatGPT cloud parser for batch/paragraph input texts
+  const handleChatGptParse = async () => {
+    if (!inputText.trim()) return;
+    setIsGptParsing(true);
+    setGptError(null);
+    setParsedList([]);
+
+    try {
+      const response = await fetch('/api/ai-parse-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: inputText }),
+      });
+      const result = await response.json();
+      if (response.ok && result.success && result.data && Array.isArray(result.data.transactions)) {
+        const transactions = result.data.transactions;
+        const mappedList = transactions.map((item: any, index: number) => {
+          const matchedType = item.tipe && item.tipe.toLowerCase() === 'pemasukan' ? 'Pemasukan' : 'Pengeluaran';
+          
+          // Match category safely with standard lists or fallback
+          let matchedCategory = 'Lainnya';
+          if (item.kategori) {
+            const catLower = item.kategori.toLowerCase();
+            const categoriesList = matchedType === 'Pemasukan' 
+              ? ['Gaji', 'Freelance', 'Bonus', 'Investasi', 'Penjualan', 'Refund', 'Lainnya Pemasukan']
+              : ['Makan', 'Transport', 'Belanja', 'Internet', 'Listrik', 'Air', 'Langganan', 'Hiburan', 'Kesehatan', 'Top Up', 'Pendidikan', 'Pajak', 'Produksi', 'Logistik', 'Marketing', 'Pinjaman', 'Lainnya'];
+            const match = categoriesList.find(c => c.toLowerCase() === catLower);
+            if (match) {
+              matchedCategory = match;
+            } else {
+              matchedCategory = matchedType === 'Pemasukan' ? 'Lainnya Pemasukan' : 'Lainnya';
+            }
+          }
+
+          // Match wallet/source safely or set fallback to Cash or first available account
+          let matchedSource = accounts[0]?.name || 'Cash';
+          if (item.wallet) {
+            const walletLower = item.wallet.toLowerCase();
+            const match = accounts.find(a => a.name.toLowerCase() === walletLower);
+            if (match) {
+              matchedSource = match.name;
+            }
+          }
+
+          return {
+            type: matchedType,
+            nominal: item.nominal || 0,
+            category: matchedCategory,
+            source: matchedSource,
+            title: item.deskripsi || item.rawText || 'Transaksi parsed',
+            date: new Date().toISOString().split('T')[0], // current date
+            rawText: item.rawText || '',
+            needClarification: false,
+            id: index
+          };
+        });
+        setParsedList(mappedList);
+        
+        // Also register smart tried flag
+        const isTried = localStorage.getItem('LKP_AI_SMART_TRIED') === 'true';
+        if (!isTried) {
+          localStorage.setItem('LKP_AI_SMART_TRIED', 'true');
+          // Dispatches a state update to trigger Navbar sync
+          window.dispatchEvent(new Event('storage'));
+        }
+      } else {
+        setGptError(result.message || result.error || 'Gagal memproses kalimat menggunakan Gemini.');
+      }
+    } catch (e: any) {
+      setGptError('Gagal menghubungi server: ' + e.message);
+    } finally {
+      setIsGptParsing(false);
+    }
+  };
 
   const handleApplyTemplate = (text: string) => {
     setInputText(text);
@@ -94,6 +195,7 @@ export function AiInputView({ accounts, onCommitTransaction, compact }: AiInputV
     setInputText('');
     setParsedList([]);
     setClarificationOverrides({});
+    setGptError(null);
   };
 
   const handleClarifyValue = (id: number, key: keyof ParsedTransaction, value: any) => {
@@ -149,14 +251,45 @@ export function AiInputView({ accounts, onCommitTransaction, compact }: AiInputV
 
   return (
     <div className="space-y-6">
-      {/* HEADER HERO AREA */}
-      <div>
-        <h1 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2">
-          <Sparkles className="h-6 w-6 text-[#7c5cff]" /> AI Smart Multi-Input Parser (Lokal)
-        </h1>
-        <p className="text-xs text-[#9aa4bf]">
-          Masukkan transaksi Anda per baris atau gabungkan langsung dalam satu kalimat. Parser lokal cerdas kami mendukung bahasa gaul, singkatan, typo, konteks konveksi/apparel, dan otomatis merinci pos kas Anda.
-        </p>
+      {/* HEADER HERO AREA & ENGINE CHOOSER */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-3 border-b border-white/5">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2">
+            <Sparkles className="h-6 w-6 text-[#7c5cff]" /> AI Smart Multi-Input Parser
+          </h1>
+          <p className="text-xs text-[#9aa4bf] mt-0.5">
+            Parser cerdas yang mendukung bahasa sehari-hari, singkatan gaul, multi-baris, dan otomatisasi pembukuan instan.
+          </p>
+        </div>
+        
+        {/* Engine Selector Segment Controls */}
+        <div className="flex bg-[#080d1e] p-1 rounded-xl border border-white/5 self-start sm:self-center">
+          <button
+            onClick={() => handleEngineChange('lokal')}
+            className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+              engine === 'lokal'
+                ? 'bg-gradient-to-r from-[#7c5cff] to-[#633be6] text-white shadow-md shadow-[#7c5cff]/20'
+                : 'text-[#9aa4bf] hover:text-white'
+            }`}
+          >
+            <CheckCircle2 className={`h-3.5 w-3.5 ${engine === 'lokal' ? 'text-emerald-400' : 'text-slate-500'}`} />
+            <span>Super-Lokal Offline</span>
+          </button>
+          <button
+            onClick={() => handleEngineChange('chatgpt')}
+            className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1.5 cursor-pointer relative overflow-visible ${
+              engine === 'chatgpt'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/20'
+                : 'text-[#9aa4bf] hover:text-white'
+            }`}
+          >
+            <Sparkles className={`h-3.5 w-3.5 ${engine === 'chatgpt' ? 'text-white' : 'text-emerald-400'}`} />
+            <span>Google Gemini API</span>
+            <span className="absolute -top-2 -right-1 bg-gradient-to-r from-purple-500 to-[#7c5cff] text-white text-[7px] font-extrabold px-1.5 py-0.5 rounded-full shadow border border-purple-400/20 uppercase animate-pulse leading-none">
+              HOT
+            </span>
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -177,7 +310,7 @@ export function AiInputView({ accounts, onCommitTransaction, compact }: AiInputV
                     Kosongkan
                   </button>
                   <span className="text-[10px] font-mono bg-[#7c5cff]/10 text-[#7c5cff] px-2 py-1 rounded-lg font-bold">
-                    Super-Lokal v1.2
+                    {engine === 'chatgpt' ? 'Gemini 3.5-flash' : 'Super-Lokal v1.2'}
                   </span>
                 </div>
               </div>
@@ -186,16 +319,52 @@ export function AiInputView({ accounts, onCommitTransaction, compact }: AiInputV
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 rows={11}
-                placeholder="Tuliskan catatan transaksi Anda. Contoh:&#10;kemarin beli kain jersey 2jt bca&#10;hari ini makan bakso 25rb cash, bensin 100rb, jajan boba 15rb"
+                placeholder={engine === 'chatgpt'
+                  ? "Tulis pembukuan bebas di sini. Contoh:\nKemarin makan ramen 120k dibayar pakai OVO\nMasuk gaji bulanan 8.5 juta rupiah ke rekening BCA\nBeli bahan pakaian 1.2jt mandiri"
+                  : "Tuliskan catatan transaksi Anda. Contoh:\nkemarin beli kain jersey 2jt bca\nhari ini makan bakso 25rb cash, bensin 100rb, jajan boba 15rb"
+                }
                 className="w-full mt-2 p-4 bg-[#080d1e] text-xs sm:text-sm text-slate-100 font-mono rounded-xl border border-white/5 focus:outline-none focus:border-[#7c5cff] focus:ring-1 focus:ring-[#7c5cff] leading-relaxed resize-none"
               />
 
-              <div className="flex gap-2 items-start mt-3 text-[10px] text-[#9aa4bf] bg-white/[0.02] p-3 rounded-xl border border-white/5">
-                <Info className="h-4 w-4 text-[#00d4ff] shrink-0 mt-0.5" />
-                <span>
-                  Parser mendukung pemisahan multi-transaksi otomatis menggunakan tanda koma atau kata connector seperti <strong className="text-white">"dan"</strong> atau <strong className="text-white">"sama"</strong>.
-                </span>
-              </div>
+              {engine === 'chatgpt' ? (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    disabled={isGptParsing || !inputText.trim()}
+                    onClick={handleChatGptParse}
+                    className="w-full py-3 bg-gradient-to-r from-emerald-500 to-[#10b981] hover:from-emerald-600 hover:to-teal-600 disabled:from-slate-800 disabled:to-slate-950 disabled:text-slate-500 text-xs font-black uppercase text-white rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 active:scale-98"
+                  >
+                    {isGptParsing ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                        <span>Menganalisis dengan Gemini...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4 text-white animate-bounce" />
+                        <span>Ekstrak Pembukuan Melalui Gemini AI &rarr;</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2 items-start mt-3 text-[10px] text-[#9aa4bf] bg-white/[0.02] p-3 rounded-xl border border-white/5">
+                  <Info className="h-4 w-4 text-[#00d4ff] shrink-0 mt-0.5" />
+                  <span>
+                    Parser mendukung pemisahan multi-transaksi otomatis menggunakan tanda koma atau kata connector seperti <strong className="text-white">"dan"</strong> atau <strong className="text-white">"sama"</strong>.
+                  </span>
+                </div>
+              )}
+
+              {gptError && (
+                <div className="mt-3 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-extrabold text-red-400">Gagal Memproses Transaksi</p>
+                    <p className="leading-relaxed text-[11px] opacity-90">{gptError}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* QUICK MULTI-LINE SCENARIOS */}

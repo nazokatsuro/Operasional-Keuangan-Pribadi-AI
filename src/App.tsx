@@ -158,6 +158,16 @@ interface UserProfile {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
 
+  // AI Smart input interaction visual indicator badge state
+  const [aiSmartTried, setAiSmartTried] = useState<boolean>(() => {
+    return localStorage.getItem('LKP_AI_SMART_TRIED') === 'true';
+  });
+
+  const markAiSmartTried = () => {
+    setAiSmartTried(true);
+    localStorage.setItem('LKP_AI_SMART_TRIED', 'true');
+  };
+
   // Category Bulanan Budget Threshold State
   const [categoryBudgets, setCategoryBudgets] = useState<Record<string, number>>(() => {
     try {
@@ -977,6 +987,9 @@ interface UserProfile {
   const handleNavbarAiSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!navbarAiInput.trim()) return;
+
+    // Mark as tried upon use
+    markAiSmartTried();
 
     const parsed = parseFinanceText(navbarAiInput);
     if (parsed && parsed.parsedOk && parsed.nominal > 0) {
@@ -1912,7 +1925,7 @@ interface UserProfile {
               isLight 
                 ? 'bg-slate-50 border-slate-200 focus-within:border-[#7c5cff] focus-within:ring-2 focus-within:ring-[#7c5cff]/20 shrink-0' 
                 : 'bg-[#12182d]/60 border-white/[0.08] focus-within:border-[#7c5cff] focus-within:ring-2 focus-within:ring-[#7c5cff]/20 shrink-0'
-            }`}>
+            } ${!aiSmartTried ? 'animate-glow-pulse animate-shimmer-sweep border-[#7c5cff]/60 shadow-lg shadow-violet-500/10' : ''}`}>
               {/* Left Sparkles Icon */}
               <div className="absolute left-3 text-violet-400 group-hover:scale-110 transition-transform flex items-center justify-center">
                 <Sparkles className="h-4 w-4 text-[#7c5cff]" />
@@ -1923,6 +1936,7 @@ interface UserProfile {
                 type="text"
                 value={navbarAiInput}
                 onChange={(e) => setNavbarAiInput(e.target.value)}
+                onFocus={markAiSmartTried}
                 placeholder="Catat cepat (AI): 'makan bakso 25rb jago'..."
                 className={`w-full pl-9 pr-14 bg-transparent text-xs font-semibold focus:outline-none placeholder:text-[#9aa4bf]/60 ${
                   isLight ? 'text-slate-800' : 'text-slate-100'
@@ -1938,6 +1952,17 @@ interface UserProfile {
                 <ChevronRight className="h-3 w-3 opacity-80" />
               </button>
             </div>
+
+            {/* Dynamic visual attention grabber badge */}
+            {!aiSmartTried ? (
+              <span className="absolute -top-2.5 -right-2 bg-gradient-to-r from-[#10b981] to-[#059669] text-white text-[7px] font-black px-1.5 py-0.5 rounded-full shadow-lg shadow-emerald-500/20 tracking-widest uppercase animate-bounce flex items-center justify-center z-20 border border-emerald-400/40 select-none pointer-events-none font-mono">
+                NEW
+              </span>
+            ) : (
+              <span className="absolute -top-2 -right-2 bg-slate-900 border border-emerald-500/30 text-emerald-400 text-[6px] font-black px-1.5 py-0.5 rounded-full shadow-inner flex items-center gap-0.5 z-20 select-none pointer-events-none scale-90 leading-none">
+                ✔ Sudah Dicoba
+              </span>
+            )}
           </form>
 
           {/* Desktop controls listing */}
@@ -2360,6 +2385,8 @@ interface UserProfile {
                 onDeleteTransaction={handleDeleteTransaction}
                 onDuplicateTransaction={handleDuplicateTransaction}
                 onCommitAI={handleCommitAI}
+                aiSmartTried={aiSmartTried}
+                onAiSmartTried={markAiSmartTried}
               />
             )}
 

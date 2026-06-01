@@ -23,6 +23,8 @@ interface TransaksiViewProps {
   onDeleteTransaction: (id: string) => void;
   onDuplicateTransaction: (tx: Transaction) => void;
   onCommitAI?: (tx: any) => void;
+  aiSmartTried?: boolean;
+  onAiSmartTried?: () => void;
 }
 
 export function TransaksiView({
@@ -32,11 +34,33 @@ export function TransaksiView({
   onEditTransaction,
   onDeleteTransaction,
   onDuplicateTransaction,
-  onCommitAI
+  onCommitAI,
+  aiSmartTried: propAiSmartTried,
+  onAiSmartTried
 }: TransaksiViewProps) {
   // Navigation Search & Filter State
   const [search, setSearch] = useState('');
-  const [activeSubTab, setActiveSubTab] = useState<'manual' | 'ai'>('manual');
+  const [activeSubTab, setActiveSubTab] = useState<'manual' | 'ai_local' | 'ai_chatgpt'>('manual');
+  
+  // Track if AI Smart Input has been tried - locally or reactively
+  const [localAiSmartTried, setLocalAiSmartTried] = useState<boolean>(() => {
+    return localStorage.getItem('LKP_AI_SMART_TRIED') === 'true';
+  });
+
+  const isAiSmartTried = propAiSmartTried !== undefined ? propAiSmartTried : localAiSmartTried;
+
+  const handleAiSmartClick = (type: 'ai_local' | 'ai_chatgpt') => {
+    setActiveSubTab(type);
+    if (!isAiSmartTried) {
+      if (onAiSmartTried) {
+        onAiSmartTried();
+      } else {
+        setLocalAiSmartTried(true);
+        localStorage.setItem('LKP_AI_SMART_TRIED', 'true');
+      }
+    }
+  };
+
   const [filterType, setFilterType] = useState<'all' | 'Pemasukan' | 'Pengeluaran'>('all');
   const [filterSource, setFilterSource] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'nominal-desc' | 'nominal-asc'>('date-desc');
@@ -61,6 +85,108 @@ export function TransaksiView({
   // Deletion lock popup state
   const [txToDelete, setTxToDelete] = useState<string | null>(null);
 
+  // OpenAI ChatGPT Smart input states
+  const [aiInputText, setAiInputText] = useState('');
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiSuccessMessage, setAiSuccessMessage] = useState<string | null>(null);
+  const [aiPreviewData, setAiPreviewData] = useState<{
+    tipe: 'pemasukan' | 'pengeluaran';
+    nominal: number;
+    kategori: string;
+    wallet: string;
+    deskripsi: string;
+  } | null>(null);
+
+  const handleAiParse = async () => {
+    if (!aiInputText.trim()) return;
+    setIsAiLoading(true);
+    setAiError(null);
+    setAiPreviewData(null);
+    setAiSuccessMessage(null);
+
+    try {
+      const res = await fetch('/api/ai-parse', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ text: aiInputText })
+      });
+
+      const result = await res.json();
+      if (res.ok && result.success) {
+        const parsed = result.data;
+        setAiPreviewData(parsed);
+        
+        // Map parsed.tipe
+        const matchedType = parsed.tipe && parsed.tipe.toLowerCase() === 'pemasukan' ? 'Pemasukan' : 'Pengeluaran';
+        setFormType(matchedType);
+        
+        // Map parsed.deskripsi/description
+        if (parsed.deskripsi) {
+          setFormTitle(parsed.deskripsi);
+        }
+        
+        // Map parsed.nominal
+        if (parsed.nominal) {
+          setFormNominal(parsed.nominal.toString());
+        }
+        
+        // Map parsed.kategori
+        if (parsed.kategori) {
+          const categoryName = parsed.kategori.trim();
+          const categoriesList = matchedType === 'Pemasukan' 
+            ? ['Gaji', 'Freelance', 'Bonus', 'Investasi', 'Penjualan', 'Refund', 'Lainnya Pemasukan']
+            : ['Makan', 'Transport', 'Belanja', 'Internet', 'Listrik', 'Air', 'Langganan', 'Hiburan', 'Kesehatan', 'Top Up', 'Pendidikan', 'Pajak', 'Produksi', 'Logistik', 'Marketing', 'Pinjaman', 'Lainnya'];
+            
+          const match = categoriesList.find(c => c.toLowerCase() === categoryName.toLowerCase());
+          if (match) {
+            setFormCategory(match);
+          } else {
+            setFormCategory(matchedType === 'Pemasukan' ? 'Lainnya Pemasukan' : 'Lainnya');
+          }
+        }
+        
+        // Map parsed.wallet
+        if (parsed.wallet) {
+          const walletName = parsed.wallet.trim();
+          const accountNames = accounts.map(a => a.name);
+          const match = accountNames.find(a => a.toLowerCase() === walletName.toLowerCase());
+          if (match) {
+            setFormSource(match);
+          } else {
+            // Settle default fallback source
+            setFormSource(accounts[0]?.name || 'Cash');
+          }
+        }
+
+        setAiSuccessMessage("Berhasil mendeteksi transaksi dan mengisi formulir!");
+        
+        // Mark as tried dynamically
+        if (!isAiSmartTried) {
+          if (onAiSmartTried) {
+            onAiSmartTried();
+          } else {
+            setLocalAiSmartTried(true);
+            localStorage.setItem('LKP_AI_SMART_TRIED', 'true');
+          }
+        }
+        
+        // Automatically fade-out the success message after 4s
+        setTimeout(() => {
+          setAiSuccessMessage(null);
+        }, 4000);
+      } else {
+        setAiError(result.message || result.error || 'Gagal menganalisa kalimat.');
+      }
+    } catch (e: any) {
+      setAiError('Terjadi kesalahan jaringan: ' + e.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
   const handleOpenAdd = () => {
     setIsEditMode(false);
     setFormTitle('');
@@ -73,6 +199,13 @@ export function TransaksiView({
     setFormAttachment('');
     setFormIsRecurring(false);
     setFormRecurringPeriod('Bulanan');
+    
+    // Clear AI States
+    setAiInputText('');
+    setAiPreviewData(null);
+    setAiError(null);
+    setAiSuccessMessage(null);
+
     setShowModal(true);
   };
 
@@ -162,13 +295,13 @@ export function TransaksiView({
         
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 self-stretch xl:self-auto shrink-0 select-none">
           {/* Sub-tab Switcher Bar moved next to Catat Transaksi */}
-          <div className="flex bg-[#0c1020] p-1 rounded-xl border border-white/[0.06] sm:w-[260px] shrink-0 h-[42px] items-center">
+          <div className="flex bg-[#0c1020] p-1 rounded-xl border border-white/[0.06] shrink-0 h-[42px] items-center" id="tx-view-navigation-tab">
             <button
               type="button"
               onClick={() => setActiveSubTab('manual')}
-              className={`flex-1 px-3 py-1.5 text-[11px] font-black rounded-lg transition-all cursor-pointer h-full flex items-center justify-center ${
+              className={`px-3 sm:px-4 py-1.5 text-[11px] font-black rounded-lg transition-all cursor-pointer h-full flex items-center justify-center ${
                 activeSubTab === 'manual'
-                  ? 'bg-[#7c5cff] text-white shadow-md'
+                  ? 'bg-white/[0.07] text-white border border-white/5 shadow-md'
                   : 'text-[#9aa4bf] hover:text-white'
               }`}
             >
@@ -176,15 +309,36 @@ export function TransaksiView({
             </button>
             <button
               type="button"
-              onClick={() => setActiveSubTab('ai')}
-              className={`flex-1 px-3 py-1.5 text-[11px] font-black rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1 h-full ${
-                activeSubTab === 'ai'
+              onClick={() => handleAiSmartClick('ai_local')}
+              className={`relative px-3 sm:px-4 py-1.5 text-[11px] font-black rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 h-full select-none group/aibtn ${
+                activeSubTab === 'ai_local'
                   ? 'bg-[#7c5cff] text-white shadow-md'
-                  : 'text-[#9aa4bf]/90 hover:text-white ai-smart-pulse'
+                  : 'text-[#9aa4bf] hover:text-white hover:bg-white/[0.02]'
               }`}
             >
-              <Sparkles className={`h-3.5 w-3.5 text-[#a855f7] ${activeSubTab !== 'ai' ? 'ai-sparkles-glow' : ''}`} />
-              AI Smart Input
+              <Sparkles className={`h-3.5 w-3.5 ${activeSubTab === 'ai_local' ? 'text-white' : 'text-[#a855f7]'} group-hover/aibtn:scale-110 transition-transform`} />
+              <span className="relative z-10">AI Smart (Lokal)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAiSmartClick('ai_chatgpt')}
+              className={`relative px-3 sm:px-4 py-1.5 text-[11px] font-black rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 h-full overflow-visible select-none group/aibtn ${
+                activeSubTab === 'ai_chatgpt'
+                  ? 'bg-gradient-to-r from-emerald-500 to-[#10b981] text-white shadow-lg shadow-emerald-500/15'
+                  : 'text-[#9aa4bf] hover:text-white hover:bg-white/[0.02]'
+              }`}
+            >
+              <Sparkles className={`h-3.5 w-3.5 ${activeSubTab === 'ai_chatgpt' ? 'text-white' : 'text-emerald-400'} group-hover/aibtn:scale-110 transition-transform`} />
+              <span className="relative z-10-chatgpt flex items-center gap-1">
+                Google Gemini <span className="text-[10px] text-yellow-300 animate-pulse">Hot 🔥</span>
+              </span>
+
+              {/* Floating NEW Sparkle status badge */}
+              {!isAiSmartTried && (
+                <span className="absolute -top-2.5 -right-2.5 bg-gradient-to-r from-yellow-400 to-[#10b981] text-black text-[7px] font-black px-1.5 py-0.5 rounded-full shadow-lg tracking-wider uppercase animate-bounce border border-yellow-300 pointer-events-none font-mono">
+                  NEW
+                </span>
+              )}
             </button>
           </div>
 
@@ -450,6 +604,7 @@ export function TransaksiView({
         <AiInputView
           accounts={accounts}
           onCommitTransaction={onCommitAI || onAddTransaction}
+          initialEngine={activeSubTab === 'ai_chatgpt' ? 'chatgpt' : 'lokal'}
         />
       )}
 
@@ -473,6 +628,107 @@ export function TransaksiView({
 
             {/* Modal Body */}
             <form onSubmit={handleSubmit} className="overflow-y-auto p-5 space-y-4 grow">
+              {/* Google Gemini Auto-Fill component inside Modal */}
+              {!isEditMode && (
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-[#7c5cff]/5 to-indigo-900/10 border border-[#7c5cff]/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-xs font-black text-violet-300 font-mono">
+                      <Sparkles className="h-4 w-4 text-[#7c5cff] animate-pulse" />
+                      AI SMART AUTO-FILL (GEMINI)
+                    </span>
+                    {!isAiSmartTried && (
+                      <span className="bg-emerald-500/20 text-emerald-400 text-[8px] font-bold px-1.5 py-0.5 rounded-full border border-emerald-500/35 uppercase animate-pulse">
+                        Baru
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="relative">
+                    <input 
+                      type="text"
+                      value={aiInputText}
+                      onChange={(e) => setAiInputText(e.target.value)}
+                      placeholder="e.g. Makan bakso 25rb pakai Dana"
+                      className="w-full pl-3 pr-24 py-2 bg-[#080d1e]/90 text-xs text-white rounded-xl border border-white/5 focus:outline-none focus:border-[#7c5cff]"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAiParse();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={isAiLoading || !aiInputText.trim()}
+                      onClick={handleAiParse}
+                      className="absolute right-1.5 top-1 px-3 py-1 bg-[#7c5cff] hover:bg-[#633be6] disabled:bg-[#34246d]/40 disabled:text-[#9aa4bf]/50 text-[10px] font-black uppercase text-white rounded-lg transition-all cursor-pointer h-7 flex items-center justify-center gap-1 shadow-md shadow-violet-500/10"
+                    >
+                      {isAiLoading ? (
+                        <RefreshCw className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3 w-3" />
+                      )}
+                      <span>{isAiLoading ? 'Proses...' : 'Parse AI'}</span>
+                    </button>
+                  </div>
+
+                  {/* AI Parse Error Feedback */}
+                  {aiError && (
+                    <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-[11px] text-red-300 flex items-start gap-1.5 leading-relaxed">
+                      <AlertCircle className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
+                      <span>{aiError}</span>
+                    </div>
+                  )}
+
+                  {/* AI Success Toast Message */}
+                  {aiSuccessMessage && (
+                    <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-300 flex items-center gap-1.5 animate-pulse">
+                      <Check className="h-4 w-4 text-emerald-400 shrink-0" />
+                      <span>{aiSuccessMessage}</span>
+                    </div>
+                  )}
+
+                  {/* Structured Preview Card */}
+                  {aiPreviewData && (
+                    <div className="p-3.5 bg-[#080d1e]/80 rounded-xl border border-white/5 space-y-2">
+                      <div className="text-[9px] uppercase font-bold tracking-wider text-slate-400 font-mono pb-1 border-b border-white/5">
+                        Preview Deteksi AI (Silakan Periksa)
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
+                        <div>
+                          <span className="text-slate-400 font-medium font-mono text-[10px]">Tipe:</span>
+                          <span className={`ml-1.5 font-bold ${aiPreviewData.tipe.toLowerCase() === 'pemasukan' ? 'text-[#16c784]' : 'text-[#ff5c7a]'}`}>
+                            {aiPreviewData.tipe.toLowerCase() === 'pemasukan' ? 'Pemasukan' : 'Pengeluaran'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 font-medium font-mono text-[10px]">Kategori:</span>
+                          <span className="ml-1.5 font-bold text-[#00d4ff] bg-[#00d4ff]/10 px-1.5 py-0.5 rounded">
+                            {aiPreviewData.kategori}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 font-medium font-mono text-[10px]">Nominal:</span>
+                          <span className="ml-1.5 font-black font-mono text-white">
+                            Rp {aiPreviewData.nominal?.toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 font-medium font-mono text-[10px]">Wallet:</span>
+                          <span className="ml-1.5 font-semibold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded font-mono">
+                            {aiPreviewData.wallet}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-[11px] pt-1">
+                        <span className="text-slate-400 font-medium font-mono text-[10px]">Deskripsi:</span>
+                        <span className="ml-1.5 text-white italic">"{aiPreviewData.deskripsi}"</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Type Switcher */}
               <div className="grid grid-cols-2 p-1 rounded-xl bg-white/[0.03] border border-white/5">
                 <button
