@@ -138,46 +138,61 @@ async function generateWithModelFallback(params: {
 
   for (const model of modelsToTry) {
     lastModelTried = model;
-    try {
-      console.log(`[GEMINI-REQUEST] Mengirim API request menggunakan model: ${model}...`);
-      const response = await ai.models.generateContent({
-        model,
-        contents: params.contents,
-        config: params.config,
-      });
-      return { response, modelUsed: model };
-    } catch (err: any) {
-      lastError = err;
-      console.error(`[GEMINI-ERROR-TEMP] Gagal menggunakan model ${model}:`, err.message || err);
-      
-      const errMsg = String(err?.message || "").toLowerCase();
-      const errStatus = err?.status || err?.statusCode || err?.code;
-      
-      const isTemporary = 
-        errStatus === "UNAVAILABLE" || 
-        errStatus === 503 || 
-        errMsg.includes("experiencing high demand") || 
-        errMsg.includes("503") || 
-        errMsg.includes("unavailable") || 
-        errMsg.includes("busy") ||
-        errMsg.includes("overload");
+    let attemptsLeft = 2; // Up to 2 attempts per model for transient errors
+    let attemptDelay = 600; // Start with 600ms delay
 
-      // For invalid keys, quota exceeded, or models not found, don't waste time trying fallback models!
-      const isFatal = 
-        errMsg.includes("api key") || 
-        errMsg.includes("invalid key") || 
-        errMsg.includes("key is not valid") ||
-        errMsg.includes("quota") || 
-        errMsg.includes("exhausted") || 
-        errStatus === 429 || 
-        errStatus === 400 || 
-        errStatus === 401;
+    while (attemptsLeft > 0) {
+      try {
+        console.log(`[GEMINI-REQUEST] Mengirim API request menggunakan model: ${model} (Sisa Percobaan: ${attemptsLeft})...`);
+        const response = await ai.models.generateContent({
+          model,
+          contents: params.contents,
+          config: params.config,
+        });
+        return { response, modelUsed: model };
+      } catch (err: any) {
+        lastError = err;
+        
+        const errMsg = String(err?.message || "").toLowerCase();
+        const errStatus = err?.status || err?.statusCode || err?.code;
+        
+        const isTemporary = 
+          errStatus === "UNAVAILABLE" || 
+          errStatus === 503 || 
+          errMsg.includes("experiencing high demand") || 
+          errMsg.includes("503") || 
+          errMsg.includes("unavailable") || 
+          errMsg.includes("busy") ||
+          errMsg.includes("overload");
 
-      if (isTemporary && !isFatal) {
-        console.warn(`[GEMINI-FALLBACK] Model ${model} sibuk/overload. Mencoba model cadangan berikutnya...`);
-        continue;
+        // For invalid keys, quota exceeded, or models not found, don't waste time trying fallback models or retrying!
+        const isFatal = 
+          errMsg.includes("api key") || 
+          errMsg.includes("invalid key") || 
+          errMsg.includes("key is not valid") ||
+          errMsg.includes("quota") || 
+          errMsg.includes("exhausted") || 
+          errStatus === 429 || 
+          errStatus === 400 || 
+          errStatus === 401;
+
+        if (isTemporary && !isFatal && attemptsLeft > 1) {
+          console.warn(`[GEMINI-RETRY] Model ${model} sibuk/overload (503/UNAVAILABLE). Menunggu ${attemptDelay}ms sebelum mencoba kembali...`);
+          await new Promise((resolve) => setTimeout(resolve, attemptDelay));
+          attemptDelay *= 2; // Exponential backoff
+          attemptsLeft--;
+          continue;
+        }
+
+        console.error(`[GEMINI-ERROR-TEMP] Gagal menggunakan model ${model}:`, err.message || err);
+        
+        if (isTemporary && !isFatal) {
+          console.warn(`[GEMINI-FALLBACK] Model ${model} tetap sibuk/overload setelah dicoba. Mencoba model cadangan berikutnya...`);
+          break; // Break the retry loop, move to next model in the modelsToTry list
+        }
+        
+        throw { originalError: err, modelTried: model };
       }
-      throw { originalError: err, modelTried: model };
     }
   }
   throw { originalError: lastError, modelTried: lastModelTried };
