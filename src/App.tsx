@@ -2998,25 +2998,85 @@ interface UserProfile {
         )}
 
         {/* MOBILE BOTTOM NAVIGATION PANEL BAR */}
-        <div className={`xl:hidden fixed bottom-0 left-0 right-0 h-14 border-t flex items-center justify-around px-2 z-30 shadow-[0_-4px_12px_rgba(0,0,0,0.15)] ${
-          isLight ? 'bg-white border-slate-200' : 'bg-[#0b1020] border-white/[0.06]'
-        }`}>
-          {sortedMenuItems.filter(item => item.id !== 'settings').slice(0, 4).map(item => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`py-1.5 flex flex-col items-center justify-center grow cursor-pointer ${
-                  isActive ? 'text-[#7c5cff]' : 'text-[#9aa4bf]'
-                }`}
-              >
-                <Icon className="h-4.5 w-4.5" />
-                <span className="text-[8px] font-bold tracking-tight uppercase mt-1 hidden sm:inline">{item.label}</span>
-              </button>
-            );
-          })}
+        <div className={`xl:hidden fixed bottom-0 left-0 right-0 h-16 border-t flex items-center justify-around px-1.5 z-30 shadow-[0_-4px_16px_rgba(0,0,0,0.22)] ${
+          isLight ? 'bg-white border-slate-200' : 'bg-[#0d1226]/95 backdrop-blur-md border-white/5'
+        }`} style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          {/* Item 1: Dashboard */}
+          <button
+            onClick={() => {
+              setActiveTab('dashboard');
+              setMobileMenuOpen(false);
+            }}
+            className={`py-1 flex flex-col items-center justify-center grow cursor-pointer transition-all duration-200 ${
+              activeTab === 'dashboard' && !mobileMenuOpen
+                ? 'text-[#7c5cff] scale-105 font-extrabold'
+                : 'text-[#9aa4bf]/80 hover:text-[#7c5cff]'
+            }`}
+          >
+            <BarChart2 className={`h-5 w-5 transition-transform duration-200 ${activeTab === 'dashboard' && !mobileMenuOpen ? 'stroke-[2.5px] scale-105' : 'stroke-[2px]'}`} />
+            <span className="text-[9px] font-bold tracking-tight mt-1 text-center truncate leading-none">Dashboard</span>
+          </button>
+
+          {/* Item 2: Transaksi */}
+          <button
+            onClick={() => {
+              setActiveTab('transactions');
+              setMobileMenuOpen(false);
+            }}
+            className={`py-1 flex flex-col items-center justify-center grow cursor-pointer transition-all duration-200 ${
+              activeTab === 'transactions' && !mobileMenuOpen
+                ? 'text-[#7c5cff] scale-105 font-extrabold'
+                : 'text-[#9aa4bf]/80 hover:text-[#7c5cff]'
+            }`}
+          >
+            <FileSpreadsheet className={`h-5 w-5 transition-transform duration-200 ${activeTab === 'transactions' && !mobileMenuOpen ? 'stroke-[2.5px] scale-105' : 'stroke-[2px]'}`} />
+            <span className="text-[9px] font-bold tracking-tight mt-1 text-center truncate leading-none">Transaksi</span>
+          </button>
+
+          {/* Item 3: Sumber Uang */}
+          <button
+            onClick={() => {
+              setActiveTab('accounts');
+              setMobileMenuOpen(false);
+            }}
+            className={`py-1 flex flex-col items-center justify-center grow cursor-pointer transition-all duration-200 ${
+              activeTab === 'accounts' && !mobileMenuOpen
+                ? 'text-[#7c5cff] scale-105 font-extrabold'
+                : 'text-[#9aa4bf]/80 hover:text-[#7c5cff]'
+            }`}
+          >
+            <Wallet className={`h-5 w-5 transition-transform duration-200 ${activeTab === 'accounts' && !mobileMenuOpen ? 'stroke-[2.5px] scale-105' : 'stroke-[2px]'}`} />
+            <span className="text-[9px] font-bold tracking-tight mt-1 text-center truncate leading-none">Sumber Uang</span>
+          </button>
+
+          {/* Item 4: Hutang Piutang */}
+          <button
+            onClick={() => {
+              setActiveTab('debts');
+              setMobileMenuOpen(false);
+            }}
+            className={`py-1 flex flex-col items-center justify-center grow cursor-pointer transition-all duration-200 ${
+              activeTab === 'debts' && !mobileMenuOpen
+                ? 'text-[#7c5cff] scale-105 font-extrabold'
+                : 'text-[#9aa4bf]/80 hover:text-[#7c5cff]'
+            }`}
+          >
+            <HeartPulse className={`h-5 w-5 transition-transform duration-200 ${activeTab === 'debts' && !mobileMenuOpen ? 'stroke-[2.5px] scale-105' : 'stroke-[2px]'}`} />
+            <span className="text-[9px] font-bold tracking-tight mt-1 text-center truncate leading-none">Hutang</span>
+          </button>
+
+          {/* Item 5: Daftar Menu */}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className={`py-1 flex flex-col items-center justify-center grow cursor-pointer transition-all duration-200 ${
+              mobileMenuOpen
+                ? 'text-[#7c5cff] scale-105 font-extrabold'
+                : 'text-[#9aa4bf]/80 hover:text-[#7c5cff]'
+            }`}
+          >
+            <Menu className={`h-5 w-5 transition-transform duration-200 ${mobileMenuOpen ? 'stroke-[2.5px] scale-105' : 'stroke-[2px]'}`} />
+            <span className="text-[9px] font-bold tracking-tight mt-1 text-center truncate leading-none">Daftar Menu</span>
+          </button>
         </div>
       </div>
     </div>
