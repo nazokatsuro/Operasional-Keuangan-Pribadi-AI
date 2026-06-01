@@ -105,8 +105,11 @@ export function TransaksiView({
     setAiPreviewData(null);
     setAiSuccessMessage(null);
 
+    const requestUrl = '/api/ai-parse';
+    console.log(`[AI-FETCH] Calling URL: ${requestUrl} with body:`, { text: aiInputText });
+
     try {
-      const res = await fetch('/api/ai-parse', {
+      const res = await fetch(requestUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -114,7 +117,32 @@ export function TransaksiView({
         body: JSON.stringify({ text: aiInputText })
       });
 
-      const result = await res.json();
+      const statusCode = res.status;
+      const contentType = res.headers.get('content-type') || '';
+      console.log(`[AI-RESPONSE] URL: ${requestUrl}, Status: ${statusCode}, Content-Type: ${contentType}`);
+
+      const rawText = await res.text();
+      console.log(`[AI-RESPONSE-BODY] URL: ${requestUrl}, Raw Body:`, rawText);
+
+      // Sebelum parsing, cek content-type & response.ok
+      if (!contentType.includes('application/json')) {
+        const errorMsg = `Server mengembalikan respon non-JSON (${contentType || 'None'}) dengan status ${statusCode}. Isi respon: ${rawText.substring(0, 200)}...`;
+        console.error(`[AI-FETCH-ERROR] ${errorMsg}`);
+        setAiError(errorMsg);
+        setIsAiLoading(false);
+        return;
+      }
+
+      let result;
+      try {
+        result = JSON.parse(rawText);
+      } catch (jsonErr: any) {
+        console.error(`[AI-PARSE-ERROR] Gagal mengurai JSON respon: ${jsonErr.message}`);
+        setAiError(`Gagal melakukan parsing JSON dari server (Status: ${statusCode}): ${jsonErr.message}`);
+        setIsAiLoading(false);
+        return;
+      }
+
       if (res.ok && result.success) {
         const parsed = result.data;
         setAiPreviewData(parsed);

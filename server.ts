@@ -32,6 +32,12 @@ let priceCache: PriceCache = {
 
 app.use(express.json());
 
+// Log all incoming API requests to the console for easy debugging
+app.use("/api", (req, res, next) => {
+  console.log(`[API-ROUTE-INCOMING] ${req.method} ${req.originalUrl}`);
+  next();
+});
+
 // API route for health checking
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
@@ -61,20 +67,27 @@ function analyzeAndLogGeminiError(err: any, modelName: string) {
 
   if (isNetwork) {
     console.error(`- Jenis Error: [Error Koneksi Jaringan] Gagal menghubungi endpoint API Gemini.`);
+    console.error("==================================================");
+    return {
+      status: 502,
+      error: "GEMINI_NETWORK_ERROR",
+      message: "Terjadi kesalahan koneksi jaringan saat menghubungi API Gemini."
+    };
   }
 
   // API Key Invalid
-  if (
+  const isKeyInvalid = 
     errMsg.includes("api_key_invalid") || 
     errMsg.includes("api key not valid") || 
     errMsg.includes("api key is not valid") || 
     errMsg.includes("invalid api key") || 
     errMsg.includes("api key expired") || 
+    errMsg.includes("invalid_argument") && errMsg.includes("api") ||
     errStatus === 400 && errMsg.includes("api key") ||
     errStatus === "INVALID_ARGUMENT" && errMsg.includes("api key") ||
-    errMsg.includes("key is not valid") ||
-    errMsg.includes("invalid_argument") && errMsg.includes("api")
-  ) {
+    errMsg.includes("key is not valid");
+
+  if (isKeyInvalid) {
     console.error(`- Jenis Error: [API Key Tidak Valid]`);
     console.error("==================================================");
     return {
@@ -85,15 +98,16 @@ function analyzeAndLogGeminiError(err: any, modelName: string) {
   }
 
   // Quota Exceeded
-  if (
+  const isQuotaExceeded = 
     errMsg.includes("resource_exhausted") || 
     errMsg.includes("quota") || 
     errMsg.includes("rate limit") || 
     errMsg.includes("rate_limit") || 
     errMsg.includes("exhausted") || 
     errStatus === 429 || 
-    errStatusStr.includes("resource_exhausted")
-  ) {
+    errStatusStr.includes("resource_exhausted");
+
+  if (isQuotaExceeded) {
     console.error(`- Jenis Error: [Kuota Habis]`);
     console.error("==================================================");
     return {
@@ -104,19 +118,20 @@ function analyzeAndLogGeminiError(err: any, modelName: string) {
   }
 
   // Model Not Found
-  if (
+  const isModelNotFound = 
     errMsg.includes("not found") || 
     errMsg.includes("model not found") || 
     errMsg.includes("model is not found") || 
     errStatus === 404 || 
-    errStatusStr.includes("not_found")
-  ) {
+    errStatusStr.includes("not_found");
+
+  if (isModelNotFound) {
     console.error(`- Jenis Error: [Model Tidak Ditemukan]`);
     console.error("==================================================");
     return {
       status: 404,
       error: "GEMINI_MODEL_NOT_FOUND",
-      message: `Model '${modelName}' tidak ditemukan.`
+      message: `Model '${modelName}' gagal digunakan karena tidak ditemukan.`
     };
   }
 
@@ -320,6 +335,16 @@ Wallet Yang Tersedia:
 
   } catch (error: any) {
     const originalError = error.originalError || error;
+
+    if (originalError instanceof SyntaxError) {
+      console.error("[GEMINI-ERROR] [ai-parse] Gagal mengurai JSON dari respon Gemini:", originalError.message);
+      return res.status(500).json({
+        success: false,
+        error: "GEMINI_JSON_PARSE_ERROR",
+        message: "Gagal memparsing struktur JSON finansial dari respon AI. Silakan coba sesuaikan kalimat Anda."
+      });
+    }
+
     const modelTried = error.modelTried || "gemini-3.5-flash";
 
     const errorDetails = analyzeAndLogGeminiError(originalError, modelTried);
@@ -466,6 +491,16 @@ Wallet Yang Tersedia:
 
   } catch (error: any) {
     const originalError = error.originalError || error;
+
+    if (originalError instanceof SyntaxError) {
+      console.error("[GEMINI-ERROR] [ai-parse-bulk] Gagal mengurai JSON bulk dari respon Gemini:", originalError.message);
+      return res.status(500).json({
+        success: false,
+        error: "GEMINI_JSON_PARSE_ERROR",
+        message: "Gagal memparsing struktur JSON finansial massal dari respon AI. Silakan sesuaian teks Anda."
+      });
+    }
+
     const modelTried = error.modelTried || "gemini-3.5-flash";
 
     const errorDetails = analyzeAndLogGeminiError(originalError, modelTried);
@@ -529,6 +564,29 @@ app.post("/api/prices", (req, res) => {
     console.error("Error in local AI price simulation:", apiError);
     return res.status(500).json({ success: false, error: String(apiError) });
   }
+});
+
+// Catch-all route handler for unmatched /api/* requests
+app.all("/api/*", (req, res) => {
+  console.error(`[API-ERROR-404] Route tidak ditemukan: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({
+    success: false,
+    error: "API_ROUTE_NOT_FOUND",
+    message: `API endpoint '${req.method} ${req.originalUrl}' tidak ditemukan pada server.`
+  });
+});
+
+// Global API Error handling middleware
+app.use((err: any, req: any, res: any, next: any) => {
+  if (req.originalUrl && req.originalUrl.startsWith("/api")) {
+    console.error("[GLOBAL-API-ERROR] Terjadi kegagalan internal server pada router API:", err);
+    return res.status(err.status || 500).json({
+      success: false,
+      error: err.code || "INTERNAL_SERVER_ERROR",
+      message: err.message || "Terjadi kesalahan internal pada server AI."
+    });
+  }
+  next(err);
 });
 
 // Vite middleware for development vs static bundle serving for production

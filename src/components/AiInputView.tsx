@@ -119,13 +119,42 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
     setGptError(null);
     setParsedList([]);
 
+    const requestUrl = '/api/ai-parse-bulk';
+    console.log(`[AI-FETCH] Calling URL: ${requestUrl} with body:`, { text: inputText });
+
     try {
-      const response = await fetch('/api/ai-parse-bulk', {
+      const response = await fetch(requestUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: inputText }),
       });
-      const result = await response.json();
+
+      const statusCode = response.status;
+      const contentType = response.headers.get('content-type') || '';
+      console.log(`[AI-RESPONSE] URL: ${requestUrl}, Status: ${statusCode}, Content-Type: ${contentType}`);
+
+      const rawText = await response.text();
+      console.log(`[AI-RESPONSE-BODY] URL: ${requestUrl}, Raw Body:`, rawText);
+
+      // Sebelum parsing, cek content-type & response.ok
+      if (!contentType.includes('application/json')) {
+        const errorMsg = `Server mengembalikan respon non-JSON (${contentType || 'None'}) dengan status ${statusCode}. Isi respon: ${rawText.substring(0, 200)}...`;
+        console.error(`[AI-FETCH-ERROR] ${errorMsg}`);
+        setGptError(errorMsg);
+        setIsGptParsing(false);
+        return;
+      }
+
+      let result;
+      try {
+        result = JSON.parse(rawText);
+      } catch (jsonErr: any) {
+        console.error(`[AI-PARSE-ERROR] Gagal mengurai JSON respon: ${jsonErr.message}`);
+        setGptError(`Gagal melakukan parsing JSON dari server (Status: ${statusCode}): ${jsonErr.message}`);
+        setIsGptParsing(false);
+        return;
+      }
+
       if (response.ok && result.success && result.data && Array.isArray(result.data.transactions)) {
         const transactions = result.data.transactions;
         const mappedList = transactions.map((item: any, index: number) => {
