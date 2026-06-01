@@ -40,7 +40,7 @@ export function TransaksiView({
 }: TransaksiViewProps) {
   // Navigation Search & Filter State
   const [search, setSearch] = useState('');
-  const [activeSubTab, setActiveSubTab] = useState<'manual' | 'ai_local' | 'ai_chatgpt'>('manual');
+  const [activeSubTab, setActiveSubTab] = useState<'manual' | 'ai_chatgpt'>('manual');
   
   // Track if AI Smart Input has been tried - locally or reactively
   const [localAiSmartTried, setLocalAiSmartTried] = useState<boolean>(() => {
@@ -49,8 +49,8 @@ export function TransaksiView({
 
   const isAiSmartTried = propAiSmartTried !== undefined ? propAiSmartTried : localAiSmartTried;
 
-  const handleAiSmartClick = (type: 'ai_local' | 'ai_chatgpt') => {
-    setActiveSubTab(type);
+  const handleAiSmartClick = () => {
+    setActiveSubTab('ai_chatgpt');
     if (!isAiSmartTried) {
       if (onAiSmartTried) {
         onAiSmartTried();
@@ -341,19 +341,7 @@ export function TransaksiView({
             </button>
             <button
               type="button"
-              onClick={() => handleAiSmartClick('ai_local')}
-              className={`relative px-3 sm:px-4 py-1.5 text-[11px] font-black rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 h-full select-none group/aibtn ${
-                activeSubTab === 'ai_local'
-                  ? 'bg-[#7c5cff] text-white shadow-md'
-                  : 'text-[#9aa4bf] hover:text-white hover:bg-white/[0.02]'
-              }`}
-            >
-              <Sparkles className={`h-3.5 w-3.5 ${activeSubTab === 'ai_local' ? 'text-white' : 'text-[#a855f7]'} group-hover/aibtn:scale-110 transition-transform`} />
-              <span className="relative z-10">AI Smart (Lokal)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAiSmartClick('ai_chatgpt')}
+              onClick={handleAiSmartClick}
               className={`relative px-3 sm:px-4 py-1.5 text-[11px] font-black rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 h-full overflow-visible select-none group/aibtn ${
                 activeSubTab === 'ai_chatgpt'
                   ? 'bg-gradient-to-r from-emerald-500 to-[#10b981] text-white shadow-lg shadow-emerald-500/15'
@@ -636,7 +624,6 @@ export function TransaksiView({
         <AiInputView
           accounts={accounts}
           onCommitTransaction={onCommitAI || onAddTransaction}
-          initialEngine={activeSubTab === 'ai_chatgpt' ? 'chatgpt' : 'lokal'}
         />
       )}
 

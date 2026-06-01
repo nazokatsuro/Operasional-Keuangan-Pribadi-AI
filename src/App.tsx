@@ -157,6 +157,31 @@ interface UserProfile {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
+  const [geminiOnline, setGeminiOnline] = useState<boolean>(true);
+
+  // Poll server-side health checks to see if Gemini is online or offline
+  useEffect(() => {
+    const checkGeminiStatus = async () => {
+      try {
+        const response = await fetch('/api/health');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.geminiConfigured === false) {
+            setGeminiOnline(false);
+          } else {
+            setGeminiOnline(true);
+          }
+        } else {
+          setGeminiOnline(false);
+        }
+      } catch (err) {
+        setGeminiOnline(false);
+      }
+    };
+    checkGeminiStatus();
+    const interval = setInterval(checkGeminiStatus, 15050);
+    return () => clearInterval(interval);
+  }, []);
 
   // AI Smart input interaction visual indicator badge state
   const [aiSmartTried, setAiSmartTried] = useState<boolean>(() => {
@@ -295,6 +320,7 @@ interface UserProfile {
   const DEFAULT_MENU_ORDER = [
     'dashboard',
     'transactions',
+    'ai_gemini',
     'emergency_fund',
     'goals',
     'budget',
@@ -1502,6 +1528,7 @@ interface UserProfile {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart2 },
     { id: 'transactions', label: 'Transaksi', icon: FileSpreadsheet },
+    { id: 'ai_gemini', label: 'AI Gemini', icon: Sparkles },
     { id: 'emergency_fund', label: 'Dana Darurat Cerdas', icon: ShieldCheck },
     { id: 'goals', label: 'Target Keuangan', icon: Target },
     { id: 'budget', label: 'Perencanaan Budget', icon: FileSpreadsheet },
@@ -2390,6 +2417,14 @@ interface UserProfile {
               />
             )}
 
+            {activeTab === 'ai_gemini' && (
+              <AiInputView
+                accounts={accounts}
+                onCommitTransaction={handleCommitAI}
+                geminiOnline={geminiOnline}
+              />
+            )}
+
             {activeTab === 'accounts' && (
               <SumberUangView
                 accounts={accounts}
@@ -3060,20 +3095,23 @@ interface UserProfile {
             <span className="text-[9px] font-bold tracking-tight mt-1 text-center truncate leading-none">Transaksi</span>
           </button>
 
-          {/* Item 3: Sumber Uang */}
+          {/* Item 3: AI Gemini */}
           <button
             onClick={() => {
-              setActiveTab('accounts');
+              setActiveTab('ai_gemini');
               setMobileMenuOpen(false);
             }}
-            className={`py-1 flex flex-col items-center justify-center grow cursor-pointer transition-all duration-200 ${
-              activeTab === 'accounts' && !mobileMenuOpen
-                ? 'text-[#7c5cff] scale-105 font-extrabold'
+            className={`py-1 flex flex-col items-center justify-center grow cursor-pointer transition-all duration-200 relative ${
+              activeTab === 'ai_gemini' && !mobileMenuOpen
+                ? 'text-emerald-400 scale-105 font-extrabold'
                 : 'text-[#9aa4bf]/80 hover:text-[#7c5cff]'
             }`}
           >
-            <Wallet className={`h-5 w-5 transition-transform duration-200 ${activeTab === 'accounts' && !mobileMenuOpen ? 'stroke-[2.5px] scale-105' : 'stroke-[2px]'}`} />
-            <span className="text-[9px] font-bold tracking-tight mt-1 text-center truncate leading-none">Sumber Uang</span>
+            <Sparkles className={`h-5 w-5 transition-transform duration-200 ${activeTab === 'ai_gemini' && !mobileMenuOpen ? 'stroke-[2.5px] text-emerald-400 scale-110 animate-pulse' : 'stroke-[2px]'}`} />
+            <span className="text-[9px] font-bold tracking-tight mt-1 text-center truncate leading-none flex items-center justify-center gap-1">
+              🤖 AI Gemini
+              <span className={`h-1.5 w-1.5 rounded-full inline-block shrink-0 ${geminiOnline ? 'bg-emerald-400' : 'bg-red-500'}`} title={geminiOnline ? 'Gemini Online' : 'Gemini Offline'} />
+            </span>
           </button>
 
           {/* Item 4: Hutang Piutang */}

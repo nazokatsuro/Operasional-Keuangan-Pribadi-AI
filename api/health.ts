@@ -3,6 +3,7 @@ export default function handler(req: any, res: any) {
   return res.status(200).json({
     success: true,
     status: "ok",
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    geminiConfigured: !!process.env.GEMINI_API_KEY
   });
 }

@@ -16,35 +16,67 @@ interface AiInputViewProps {
   accounts: Account[];
   onCommitTransaction: (tx: ParsedTransaction) => void;
   compact?: boolean;
-  initialEngine?: 'lokal' | 'chatgpt';
+  geminiOnline?: boolean;
 }
 
-export function AiInputView({ accounts, onCommitTransaction, compact, initialEngine }: AiInputViewProps) {
+export function AiInputView({ accounts, onCommitTransaction, compact, geminiOnline: propGeminiOnline }: AiInputViewProps) {
   // Multiline state handling
   const [inputText, setInputText] = useState('');
   const [parsedList, setParsedList] = useState<Array<ParsedTransaction & { rawText: string; id: number }>>([]);
   const [showAnimation, setShowAnimation] = useState(false);
   const [committedCount, setCommittedCount] = useState(0);
 
-  // Engine select state (lokal vs chatgpt)
-  const [engine, setEngine] = useState<'lokal' | 'chatgpt'>(() => {
-    if (initialEngine) return initialEngine;
-    return (localStorage.getItem('LKP_AI_PARSER_ENGINE') as 'lokal' | 'chatgpt') || 'lokal';
+  // Dynamic engine state: 'gemini' as the default/primary mode, 'local' as backup
+  const [engine, setEngine] = useState<'gemini' | 'local'>('gemini');
+  const [geminiOnline, setGeminiOnline] = useState<boolean>(() => {
+    return propGeminiOnline !== undefined ? propGeminiOnline : true;
+  });
+  const [autoFallback, setAutoFallback] = useState<boolean>(() => {
+    const saved = localStorage.getItem('LKP_AI_AUTOFALLBACK');
+    return saved !== null ? saved === 'true' : true;
   });
   const [isGptParsing, setIsGptParsing] = useState(false);
   const [gptError, setGptError] = useState<string | null>(null);
 
+  // Sync propGeminiOnline changes to local state
   useEffect(() => {
-    if (initialEngine) {
-      setEngine(initialEngine);
+    if (propGeminiOnline !== undefined) {
+      setGeminiOnline(propGeminiOnline);
+      if (!propGeminiOnline && autoFallback) {
+        setEngine('local');
+      }
     }
-  }, [initialEngine]);
+  }, [propGeminiOnline, autoFallback]);
 
-  const handleEngineChange = (newEngine: 'lokal' | 'chatgpt') => {
-    setEngine(newEngine);
-    localStorage.setItem('LKP_AI_PARSER_ENGINE', newEngine);
-    setParsedList([]);
-    setGptError(null);
+  // Fetch initial API status on mount
+  useEffect(() => {
+    const checkGeminiConfig = async () => {
+      try {
+        const response = await fetch('/api/health');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.geminiConfigured === false) {
+            console.warn('[AI] Gemini API Key has not been configured on the server yet.');
+            setGeminiOnline(false);
+            if (autoFallback) {
+              setEngine('local');
+            }
+          } else {
+            setGeminiOnline(true);
+          }
+        }
+      } catch (err) {
+        console.error('[AI] Health probe check failed:', err);
+      }
+    };
+    if (propGeminiOnline === undefined) {
+      checkGeminiConfig();
+    }
+  }, [autoFallback, propGeminiOnline]);
+
+  const handleAutoFallbackChange = (checked: boolean) => {
+    setAutoFallback(checked);
+    localStorage.setItem('LKP_AI_AUTOFALLBACK', String(checked));
   };
 
   // In-memory clarification overrides
@@ -80,18 +112,17 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
     { text: 'ongkir ekspedisi sicepat 22rb cash', label: 'Ongkir Paket' }
   ];
 
-  // Heuristic offline parser runs on input text when in 'lokal' engine mode
+  // Reset parsed list when text input becomes empty
   useEffect(() => {
-    if (engine === 'chatgpt') {
-      return;
-    }
     if (!inputText) {
       setParsedList([]);
-      return;
     }
+  }, [inputText]);
 
-    // Preprocess input text to lines (splits comma/conjunction multi-transactions and propagates date context)
-    const lines = preprocessInputToLines(inputText);
+  // Fallback Local Parser executes instantly and robustly in-browser
+  const handleLocalParseDirectly = (textToParse: string) => {
+    if (!textToParse.trim()) return;
+    const lines = preprocessInputToLines(textToParse);
     const parsedItems = lines.map((line, index) => {
       const trimmedLine = line.trim();
       if (!trimmedLine) return null;
@@ -103,14 +134,19 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
         ...parsedItem,
         ...overrides,
         rawText: trimmedLine,
-        // Ensure needClarification is also overridden if they clarified
         needClarification: overrides.needClarification !== undefined ? overrides.needClarification : parsedItem.needClarification,
         id: index
       };
     }).filter(item => item !== null) as Array<ParsedTransaction & { rawText: string; id: number }>;
 
     setParsedList(parsedItems);
-  }, [inputText, clarificationOverrides, engine]);
+
+    const isTried = localStorage.getItem('LKP_AI_SMART_TRIED') === 'true';
+    if (!isTried) {
+      localStorage.setItem('LKP_AI_SMART_TRIED', 'true');
+      window.dispatchEvent(new Event('storage'));
+    }
+  };
 
   // Server-side ChatGPT cloud parser for batch/paragraph input texts
   const handleChatGptParse = async () => {
@@ -138,9 +174,11 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
 
       // Validate status code
       if (!response.ok) {
+        setGeminiOnline(false);
         try {
           const parsedErr = JSON.parse(rawText);
-          throw new Error(parsedErr.message || parsedErr.error || `API Error: ${statusCode}`);
+          const errorMsg = parsedErr.message || parsedErr.error || `API Error: ${statusCode}`;
+          throw new Error(errorMsg);
         } catch {
           throw new Error(`API Error: ${statusCode}`);
         }
@@ -148,6 +186,7 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
 
       // Check content-type
       if (!contentType?.includes('application/json')) {
+        setGeminiOnline(false);
         throw new Error('Server tidak mengembalikan JSON valid');
       }
 
@@ -155,6 +194,7 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
       try {
         result = JSON.parse(rawText);
       } catch (jsonErr: any) {
+        setGeminiOnline(false);
         console.error(`[AI-PARSE-ERROR] Gagal mengurai JSON respon: ${jsonErr.message}`);
         throw new Error(`Gagal melakukan parsing JSON dari server (Status: ${statusCode}): ${jsonErr.message}`);
       }
@@ -202,6 +242,7 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
           };
         });
         setParsedList(mappedList);
+        setGeminiOnline(true);
         
         // Also register smart tried flag
         const isTried = localStorage.getItem('LKP_AI_SMART_TRIED') === 'true';
@@ -211,10 +252,20 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
           window.dispatchEvent(new Event('storage'));
         }
       } else {
+        setGeminiOnline(false);
         setGptError(result.message || result.error || 'Gagal memproses kalimat menggunakan Gemini.');
+        if (autoFallback) {
+          setEngine('local');
+          handleLocalParseDirectly(inputText);
+        }
       }
     } catch (e: any) {
-      setGptError('Gagal menghubungi server: ' + e.message);
+      setGeminiOnline(false);
+      setGptError('Gagal menghubungi server Gemini: ' + e.message);
+      if (autoFallback) {
+        setEngine('local');
+        handleLocalParseDirectly(inputText);
+      }
     } finally {
       setIsGptParsing(false);
     }
@@ -295,33 +346,24 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
           </p>
         </div>
         
-        {/* Engine Selector Segment Controls */}
-        <div className="flex bg-[#080d1e] p-1 rounded-xl border border-white/5 self-start sm:self-center">
-          <button
-            onClick={() => handleEngineChange('lokal')}
-            className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-              engine === 'lokal'
-                ? 'bg-gradient-to-r from-[#7c5cff] to-[#633be6] text-white shadow-md shadow-[#7c5cff]/20'
-                : 'text-[#9aa4bf] hover:text-white'
-            }`}
-          >
-            <CheckCircle2 className={`h-3.5 w-3.5 ${engine === 'lokal' ? 'text-emerald-400' : 'text-slate-500'}`} />
-            <span>Super-Lokal Offline</span>
-          </button>
-          <button
-            onClick={() => handleEngineChange('chatgpt')}
-            className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1.5 cursor-pointer relative overflow-visible ${
-              engine === 'chatgpt'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/20'
-                : 'text-[#9aa4bf] hover:text-white'
-            }`}
-          >
-            <Sparkles className={`h-3.5 w-3.5 ${engine === 'chatgpt' ? 'text-white' : 'text-emerald-400'}`} />
-            <span>Google Gemini API</span>
-            <span className="absolute -top-2 -right-1 bg-gradient-to-r from-purple-500 to-[#7c5cff] text-white text-[7px] font-extrabold px-1.5 py-0.5 rounded-full shadow border border-purple-400/20 uppercase animate-pulse leading-none">
-              HOT
-            </span>
-          </button>
+        {/* Simplified Status Indicator with Ping animation for Active status and Offline local mode badge */}
+        <div className="flex flex-wrap items-center gap-2 select-none font-mono">
+          {geminiOnline ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-black">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+              <span>🟢 Gemini Online</span>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-xs font-black">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-400"></span>
+                <span>🔴 Gemini Offline</span>
+              </div>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-xl text-xs font-black animate-pulse">
+                <span>⚡ Mode Lokal Aktif</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -342,9 +384,16 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
                   >
                     Kosongkan
                   </button>
-                  <span className="text-[10px] font-mono bg-[#7c5cff]/10 text-[#7c5cff] px-2 py-1 rounded-lg font-bold">
-                    {engine === 'chatgpt' ? 'Gemini 3.5-flash' : 'Super-Lokal v1.2'}
-                  </span>
+                  {/* Badge Mode Aktif */}
+                  {engine === 'gemini' ? (
+                    <span className="text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-lg flex items-center gap-1 font-mono">
+                      <span>🤖 Mode Aktif: Google Gemini AI</span>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-1 rounded-lg flex items-center gap-1 font-mono">
+                      <span>⚡ Mode Aktif: Parser Lokal</span>
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -352,15 +401,38 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 rows={11}
-                placeholder={engine === 'chatgpt'
-                  ? "Tulis pembukuan bebas di sini. Contoh:\nKemarin makan ramen 120k dibayar pakai OVO\nMasuk gaji bulanan 8.5 juta rupiah ke rekening BCA\nBeli bahan pakaian 1.2jt mandiri"
-                  : "Tuliskan catatan transaksi Anda. Contoh:\nkemarin beli kain jersey 2jt bca\nhari ini makan bakso 25rb cash, bensin 100rb, jajan boba 15rb"
-                }
+                placeholder="Tulis pembukuan bebas di sini. Contoh:&#10;Kemarin makan ramen 120k dibayar pakai OVO&#10;Masuk gaji bulanan 8.5 juta rupiah ke rekening BCA&#10;Beli bahan pakaian 1.2jt mandiri"
                 className="w-full mt-2 p-4 bg-[#080d1e] text-xs sm:text-sm text-slate-100 font-mono rounded-xl border border-white/5 focus:outline-none focus:border-[#7c5cff] focus:ring-1 focus:ring-[#7c5cff] leading-relaxed resize-none"
               />
 
-              {engine === 'chatgpt' ? (
-                <div className="mt-3">
+              {/* Gemini Unavailable Alert Banner and Local backup buttons */}
+              {!geminiOnline && (
+                <div className="mt-3 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex flex-col gap-3">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="font-extrabold text-amber-400">⚠️ Gemini AI sedang tidak tersedia</p>
+                      <p className="text-[10px] text-[#9aa4bf]">Gemini mengalami kegagalan (galat jaringan, kuota, atau kunci belum disetel).</p>
+                    </div>
+                  </div>
+                  {engine !== 'local' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEngine('local');
+                        handleLocalParseDirectly(inputText);
+                      }}
+                      className="w-full py-2 bg-amber-500 hover:bg-amber-600 focus:outline-none font-bold text-[#0e1329] text-[10px] uppercase rounded-lg transition-colors cursor-pointer"
+                    >
+                      💡 Gunakan Parser Lokal Sebagai Cadangan
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Action trigger button */}
+              <div className="mt-3">
+                {engine === 'gemini' ? (
                   <button
                     type="button"
                     disabled={isGptParsing || !inputText.trim()}
@@ -379,15 +451,45 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
                       </>
                     )}
                   </button>
-                </div>
-              ) : (
-                <div className="flex gap-2 items-start mt-3 text-[10px] text-[#9aa4bf] bg-white/[0.02] p-3 rounded-xl border border-white/5">
-                  <Info className="h-4 w-4 text-[#00d4ff] shrink-0 mt-0.5" />
-                  <span>
-                    Parser mendukung pemisahan multi-transaksi otomatis menggunakan tanda koma atau kata connector seperti <strong className="text-white">"dan"</strong> atau <strong className="text-white">"sama"</strong>.
-                  </span>
-                </div>
-              )}
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!inputText.trim()}
+                    onClick={() => handleLocalParseDirectly(inputText)}
+                    className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:from-slate-800 disabled:to-slate-950 disabled:text-emerald-500/40 text-xs font-black uppercase text-[#0e1329] rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-amber-500/10 active:scale-98"
+                  >
+                    <CornerDownLeft className="h-4 w-4 animate-pulse" />
+                    <span>Ekstrak Pembukuan Melalui Parser Lokal &rarr;</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Automatic Fallback preference checkbox and manual restore button */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/[0.01] border border-white/5 p-3 rounded-xl mt-3 text-xs">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-[#9aa4bf] hover:text-white transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={autoFallback}
+                    onChange={(e) => handleAutoFallbackChange(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-white/10 bg-slate-900 text-[#7c5cff] focus:ring-[#7c5cff]"
+                  />
+                  <span className="text-[11px] font-semibold">Alihkan otomatis ke Parser Lokal saat Gemini gagal</span>
+                </label>
+
+                {engine === 'local' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEngine('gemini');
+                      setGeminiOnline(true);
+                      setGptError(null);
+                    }}
+                    className="px-2.5 py-1 bg-[#7c5cff]/10 hover:bg-[#7c5cff]/20 text-[#7c5cff] border border-[#7c5cff]/30 text-[10px] font-extrabold rounded-lg transition-all cursor-pointer flex items-center gap-1 self-start sm:self-center"
+                  >
+                    <span>Kembali ke Gemini AI</span>
+                  </button>
+                )}
+              </div>
 
               {gptError && (
                 <div className="mt-3 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex items-start gap-2">
