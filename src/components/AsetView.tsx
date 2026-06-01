@@ -145,7 +145,10 @@ export function AsetView({
 
       const assetsPayload = Array.from(consolidatedMap.values());
 
-      const response = await fetch('/api/prices', {
+      const requestUrl = '/api/prices';
+      console.log(`[PRICE-FETCH] Calling URL: ${requestUrl} with body:`, { assets: assetsPayload });
+
+      const response = await fetch(requestUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -153,28 +156,55 @@ export function AsetView({
         body: JSON.stringify({ assets: assetsPayload })
       });
 
-      if (response.ok) {
-        const resData = await response.json();
-        if (resData.success && resData.prices) {
-          const updated = localAssets.map(asset => {
-            const isGold = asset.category === 'Gold' || asset.code.toUpperCase() === 'GOLD';
-            const lookupCode = isGold ? 'GOLD' : asset.code.toUpperCase();
-            const newPrice = resData.prices[lookupCode];
-            
-            if (newPrice !== undefined && newPrice > 0) {
-              // Persist price change globally!
-              onEditAsset(asset.id, { marketPrice: newPrice });
-              return { ...asset, marketPrice: newPrice };
-            }
-            return asset;
-          });
-          
-          setLocalAssets(updated);
-          setLastUpdated(resData.lastUpdated || new Date().toLocaleTimeString());
+      const statusCode = response.status;
+      const contentType = response.headers.get('content-type');
+      console.log(`[PRICE-RESPONSE] URL: ${requestUrl}, Status: ${statusCode}, Content-Type: ${contentType}`);
+
+      const rawText = await response.text();
+      console.log(`[PRICE-RESPONSE-BODY] URL: ${requestUrl}, Raw Body:`, rawText);
+
+      // Validate status code
+      if (!response.ok) {
+        try {
+          const parsedErr = JSON.parse(rawText);
+          throw new Error(parsedErr.message || parsedErr.error || `API Error: ${statusCode}`);
+        } catch {
+          throw new Error(`API Error: ${statusCode}`);
         }
       }
-    } catch (e) {
-      console.warn('Issue fetching prices from Gemini backend:', e);
+
+      // Check content-type
+      if (!contentType?.includes('application/json')) {
+        throw new Error('Server tidak mengembalikan JSON valid');
+      }
+
+      let resData;
+      try {
+        resData = JSON.parse(rawText);
+      } catch (jsonErr: any) {
+        console.error(`[PRICE-PARSE-ERROR] Gagal mengurai JSON respon: ${jsonErr.message}`);
+        throw new Error(`Gagal melakukan parsing JSON dari server (Status: ${statusCode}): ${jsonErr.message}`);
+      }
+
+      if (resData.success && resData.prices) {
+        const updated = localAssets.map(asset => {
+          const isGold = asset.category === 'Gold' || asset.code.toUpperCase() === 'GOLD';
+          const lookupCode = isGold ? 'GOLD' : asset.code.toUpperCase();
+          const newPrice = resData.prices[lookupCode];
+          
+          if (newPrice !== undefined && newPrice > 0) {
+            // Persist price change globally!
+            onEditAsset(asset.id, { marketPrice: newPrice });
+            return { ...asset, marketPrice: newPrice };
+          }
+          return asset;
+        });
+        
+        setLocalAssets(updated);
+        setLastUpdated(resData.lastUpdated || new Date().toLocaleTimeString());
+      }
+    } catch (e: any) {
+      console.error('[PRICE-FETCH-ERROR] Issue fetching prices from Gemini backend:', e.message || e);
     } finally {
       setIsRefreshing(false);
     }

@@ -130,19 +130,25 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
       });
 
       const statusCode = response.status;
-      const contentType = response.headers.get('content-type') || '';
+      const contentType = response.headers.get('content-type');
       console.log(`[AI-RESPONSE] URL: ${requestUrl}, Status: ${statusCode}, Content-Type: ${contentType}`);
 
       const rawText = await response.text();
       console.log(`[AI-RESPONSE-BODY] URL: ${requestUrl}, Raw Body:`, rawText);
 
-      // Sebelum parsing, cek content-type & response.ok
-      if (!contentType.includes('application/json')) {
-        const errorMsg = `Server mengembalikan respon non-JSON (${contentType || 'None'}) dengan status ${statusCode}. Isi respon: ${rawText.substring(0, 200)}...`;
-        console.error(`[AI-FETCH-ERROR] ${errorMsg}`);
-        setGptError(errorMsg);
-        setIsGptParsing(false);
-        return;
+      // Validate status code
+      if (!response.ok) {
+        try {
+          const parsedErr = JSON.parse(rawText);
+          throw new Error(parsedErr.message || parsedErr.error || `API Error: ${statusCode}`);
+        } catch {
+          throw new Error(`API Error: ${statusCode}`);
+        }
+      }
+
+      // Check content-type
+      if (!contentType?.includes('application/json')) {
+        throw new Error('Server tidak mengembalikan JSON valid');
       }
 
       let result;
@@ -150,12 +156,10 @@ export function AiInputView({ accounts, onCommitTransaction, compact, initialEng
         result = JSON.parse(rawText);
       } catch (jsonErr: any) {
         console.error(`[AI-PARSE-ERROR] Gagal mengurai JSON respon: ${jsonErr.message}`);
-        setGptError(`Gagal melakukan parsing JSON dari server (Status: ${statusCode}): ${jsonErr.message}`);
-        setIsGptParsing(false);
-        return;
+        throw new Error(`Gagal melakukan parsing JSON dari server (Status: ${statusCode}): ${jsonErr.message}`);
       }
 
-      if (response.ok && result.success && result.data && Array.isArray(result.data.transactions)) {
+      if (result.success && result.data && Array.isArray(result.data.transactions)) {
         const transactions = result.data.transactions;
         const mappedList = transactions.map((item: any, index: number) => {
           const matchedType = item.tipe && item.tipe.toLowerCase() === 'pemasukan' ? 'Pemasukan' : 'Pengeluaran';

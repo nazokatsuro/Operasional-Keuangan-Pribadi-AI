@@ -118,19 +118,25 @@ export function TransaksiView({
       });
 
       const statusCode = res.status;
-      const contentType = res.headers.get('content-type') || '';
+      const contentType = res.headers.get('content-type');
       console.log(`[AI-RESPONSE] URL: ${requestUrl}, Status: ${statusCode}, Content-Type: ${contentType}`);
 
       const rawText = await res.text();
       console.log(`[AI-RESPONSE-BODY] URL: ${requestUrl}, Raw Body:`, rawText);
 
-      // Sebelum parsing, cek content-type & response.ok
-      if (!contentType.includes('application/json')) {
-        const errorMsg = `Server mengembalikan respon non-JSON (${contentType || 'None'}) dengan status ${statusCode}. Isi respon: ${rawText.substring(0, 200)}...`;
-        console.error(`[AI-FETCH-ERROR] ${errorMsg}`);
-        setAiError(errorMsg);
-        setIsAiLoading(false);
-        return;
+      // Validate status code
+      if (!res.ok) {
+        try {
+          const parsedErr = JSON.parse(rawText);
+          throw new Error(parsedErr.message || parsedErr.error || `API Error: ${statusCode}`);
+        } catch {
+          throw new Error(`API Error: ${statusCode}`);
+        }
+      }
+
+      // Check content-type
+      if (!contentType?.includes('application/json')) {
+        throw new Error('Server tidak mengembalikan JSON valid');
       }
 
       let result;
@@ -138,12 +144,10 @@ export function TransaksiView({
         result = JSON.parse(rawText);
       } catch (jsonErr: any) {
         console.error(`[AI-PARSE-ERROR] Gagal mengurai JSON respon: ${jsonErr.message}`);
-        setAiError(`Gagal melakukan parsing JSON dari server (Status: ${statusCode}): ${jsonErr.message}`);
-        setIsAiLoading(false);
-        return;
+        throw new Error(`Gagal melakukan parsing JSON dari server (Status: ${statusCode}): ${jsonErr.message}`);
       }
 
-      if (res.ok && result.success) {
+      if (result.success) {
         const parsed = result.data;
         setAiPreviewData(parsed);
         
@@ -209,7 +213,7 @@ export function TransaksiView({
         setAiError(result.message || result.error || 'Gagal menganalisa kalimat.');
       }
     } catch (e: any) {
-      setAiError('Terjadi kesalahan jaringan: ' + e.message);
+      setAiError(e.message || 'Terjadi kesalahan saat memproses data.');
     } finally {
       setIsAiLoading(false);
     }
