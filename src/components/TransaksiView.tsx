@@ -180,10 +180,10 @@ export function TransaksiView({
               className={`flex-1 px-3 py-1.5 text-[11px] font-black rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1 h-full ${
                 activeSubTab === 'ai'
                   ? 'bg-[#7c5cff] text-white shadow-md'
-                  : 'text-[#9aa4bf] hover:text-white'
+                  : 'text-[#9aa4bf]/90 hover:text-white ai-smart-pulse'
               }`}
             >
-              <Sparkles className="h-3.5 w-3.5 text-[#a855f7]" />
+              <Sparkles className={`h-3.5 w-3.5 text-[#a855f7] ${activeSubTab !== 'ai' ? 'ai-sparkles-glow' : ''}`} />
               AI Smart Input
             </button>
           </div>
